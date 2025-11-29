@@ -77,6 +77,42 @@ python manage.py shell
 
 ## Architecture
 
+qutemail-backend/
+├─ docker-compose.yml
+├─ manage.py
+├─ requirements.txt
+├─ README.md
+├─ docs/
+│  └─ ETSI_QKD_014_integration.md
+├─ qutemail/               # django project
+│  ├─ settings/
+│  ├─ urls.py
+│  └─ wsgi.py
+├─ apps/
+│  ├─ accounts/            # user auth, profiles
+│  │  ├─ models.py
+│  │  ├─ serializers.py
+│  │  ├─ views.py
+│  ├─ mail/                # compose, send, inbox, encryption metadata
+│  │  ├─ models.py
+│  │  ├─ serializers.py
+│  │  ├─ views.py
+│  │  ├─ tasks.py          # celery tasks for send/process
+│  ├─ qkd/                 # QKD KM connector + simulator
+│  │  ├─ km_client.py      # ETSI GS QKD 014 wrapper
+│  │  ├─ simulator.py      # dev-only BB84 mini-sim
+│  │  ├─ services.py       # high-level methods: request_key, confirm_key
+│  ├─ crypto/              # HKDF + AES + OTP helpers
+│  │  ├─ utils.py
+│  └─ infra/               # SMTP/IMAP clients, storage adapters
+│     ├─ smtp_client.py
+│     ├─ imap_client.py
+│     └─ storage.py
+├─ scripts/
+│  └─ bootstrap_mailserver.sh
+└─ tests/
+
+
 ### Core Components
 
 The system is organized into five main Django apps under the `apps/` directory:
