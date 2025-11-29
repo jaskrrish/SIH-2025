@@ -9,3 +9,12 @@ requests==2.31.0
 django-cors-headers==4.3.1
 gunicorn==21.2.0
 dj-database-url==2.1.0
+
+# SMTP Server
+aiosmtpd==1.4.4
+email-validator==2.1.0
+
+# DNS and Email Authentication
+dnspython==2.4.2
+dkimpy==1.1.5
+pyspf==2.0.14

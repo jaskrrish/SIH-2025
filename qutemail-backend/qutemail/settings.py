@@ -175,10 +175,40 @@ REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 QKD_KM_URL = config('QKD_KM_URL', default='http://localhost:8080')
 QKD_SIMULATOR_MODE = config('QKD_SIMULATOR_MODE', default=True, cast=bool)
 
-# Email Configuration
+# Email Configuration (Client - for sending to external SMTP)
 SMTP_HOST = config('SMTP_HOST', default='localhost')
 SMTP_PORT = config('SMTP_PORT', default=587, cast=int)
 SMTP_USE_TLS = config('SMTP_USE_TLS', default=True, cast=bool)
 IMAP_HOST = config('IMAP_HOST', default='localhost')
 IMAP_PORT = config('IMAP_PORT', default=993, cast=int)
 IMAP_USE_SSL = config('IMAP_USE_SSL', default=True, cast=bool)
+
+# SMTP Server Configuration (Our server for receiving/sending emails)
+EMAIL_DOMAIN = config('EMAIL_DOMAIN', default='qutemail.com')
+
+# Server hostnames and ports
+SMTP_SERVER_HOSTNAME = config('SMTP_SERVER_HOSTNAME', default='0.0.0.0')
+SMTP_MTA_PORT = config('SMTP_MTA_PORT', default=25, cast=int)
+SMTP_MSA_PORT = config('SMTP_MSA_PORT', default=587, cast=int)
+SMTP_SMTPS_PORT = config('SMTP_SMTPS_PORT', default=465, cast=int)
+
+# TLS/SSL Certificates (for secure SMTP)
+SMTP_TLS_CERT = config('SMTP_TLS_CERT', default='/etc/letsencrypt/live/yourdomain.com/fullchain.pem')
+SMTP_TLS_KEY = config('SMTP_TLS_KEY', default='/etc/letsencrypt/live/yourdomain.com/privkey.pem')
+
+# Email Size Limits
+SMTP_MAX_MESSAGE_SIZE = config('SMTP_MAX_MESSAGE_SIZE', default=25 * 1024 * 1024, cast=int)  # 25MB
+
+# Rate Limiting (per hour)
+SMTP_RATE_LIMIT_PER_IP = config('SMTP_RATE_LIMIT_PER_IP', default=100, cast=int)
+SMTP_RATE_LIMIT_PER_USER = config('SMTP_RATE_LIMIT_PER_USER', default=500, cast=int)
+
+# Mailbox Configuration
+MAILBOX_DEFAULT_QUOTA_GB = config('MAILBOX_DEFAULT_QUOTA_GB', default=5, cast=int)
+
+# Email Retention Policy
+EMAIL_RETENTION_DAYS = config('EMAIL_RETENTION_DAYS', default=365, cast=int)
+
+# DKIM Configuration (for email authentication)
+DKIM_SELECTOR = config('DKIM_SELECTOR', default='mail')
+DKIM_PRIVATE_KEY_PATH = config('DKIM_PRIVATE_KEY_PATH', default='/etc/dkim/private.key')
