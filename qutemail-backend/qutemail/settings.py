@@ -168,6 +168,36 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
+# Celery Beat Schedule (Periodic Tasks)
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'process-email-queue': {
+        'task': 'mail.tasks.process_email_queue',
+        'schedule': 30.0,  # Run every 30 seconds
+        'options': {
+            'expires': 25.0,  # Task expires if not run within 25 seconds
+        }
+    },
+    'fetch-incoming-emails': {
+        'task': 'mail.tasks.fetch_incoming_emails',
+        'schedule': 60.0,  # Run every 60 seconds (IMAP polling)
+        'options': {
+            'expires': 55.0,
+        }
+    },
+    'cleanup-old-logs': {
+        'task': 'mail.tasks.cleanup_old_logs',
+        'schedule': crontab(hour=3, minute=0),  # Run daily at 3:00 AM
+        'kwargs': {'days': 90},  # Delete logs older than 90 days
+    },
+    'cleanup-stale-queue-entries': {
+        'task': 'mail.tasks.cleanup_old_queue_entries',
+        'schedule': crontab(hour='*/6', minute=0),  # Run every 6 hours
+        'kwargs': {'hours': 24},  # Unlock entries locked for >24 hours
+    },
+}
+
 # Redis Configuration
 REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 

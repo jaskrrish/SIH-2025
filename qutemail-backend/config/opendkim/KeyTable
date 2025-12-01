@@ -1,0 +1,10 @@
+# OpenDKIM Key Table
+# Format: name domain:selector:keyfile
+#
+# The selector (e.g., "default") is used in the DNS TXT record
+# and must match the DNS configuration
+#
+# Example:
+# default._domainkey.qutemail.local qutemail.local:default:/etc/opendkim/keys/qutemail.local/default.private
+
+default._domainkey.qutemail.local qutemail.local:default:/etc/opendkim/keys/default.private

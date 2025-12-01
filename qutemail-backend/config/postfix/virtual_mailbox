@@ -1,0 +1,12 @@
+# Virtual Mailbox Mapping
+# Format: email@domain    mailbox_directory
+#
+# Example entries:
+# user1@qutemail.local    qutemail.local/user1/
+# user2@qutemail.local    qutemail.local/user2/
+#
+# This file will be automatically populated by Django
+# when new users are created via UserEmailSettings model
+#
+# To regenerate the hash database after manual edits:
+# postmap /etc/postfix/virtual_mailbox

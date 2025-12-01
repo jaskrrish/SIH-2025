@@ -1,0 +1,25 @@
+# OpenDKIM Trusted Hosts
+# Hosts/networks that are trusted to relay mail through this server
+#
+# Format:
+#   - Hostname: mail.example.com
+#   - IP address: 192.168.1.1
+#   - CIDR network: 192.168.0.0/16
+#   - Domain: .example.com (all hosts in example.com)
+
+# Localhost
+127.0.0.1
+::1
+localhost
+localhost.localdomain
+
+# Docker networks
+172.16.0.0/12
+192.168.0.0/16
+10.0.0.0/8
+
+# Local domain
+qutemail.local
+.qutemail.local
+
+# Add your external mail servers here if needed

@@ -1,0 +1,11 @@
+# Dovecot passwd-file
+# Format: user:password:uid:gid:gecos:home:shell:extra_fields
+#
+# Example entry:
+# user1@qutemail.local:{PLAIN}password123:5000:5000::/var/mail/vhosts/qutemail.local/user1::
+#
+# This file will be automatically populated by Django
+# when new users are created via UserEmailSettings model
+#
+# Password schemes: {PLAIN}, {SHA256-CRYPT}, {ARGON2I}, etc.
+# For production, use encrypted passwords instead of {PLAIN}

@@ -1,0 +1,13 @@
+# OpenDKIM Signing Table
+# Format: pattern key
+#
+# This maps email addresses to DKIM keys
+# Pattern can be:
+#   - Exact email: user@domain.com
+#   - Domain wildcard: *@domain.com
+#   - Regex: /^.*@example\.com$/
+#
+# Example:
+# *@qutemail.local default._domainkey.qutemail.local
+
+*@qutemail.local default._domainkey.qutemail.local

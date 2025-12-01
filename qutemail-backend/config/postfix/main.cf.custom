@@ -1,0 +1,86 @@
+# Postfix main configuration for QtEmail
+# This file contains custom settings that override the default main.cf
+
+# Basic Settings
+myhostname = mail.qutemail.local
+mydomain = qutemail.local
+myorigin = $mydomain
+mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain
+mynetworks = 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+inet_interfaces = all
+inet_protocols = ipv4
+
+# Mail Queue Settings
+queue_directory = /var/spool/postfix
+command_directory = /usr/sbin
+daemon_directory = /usr/libexec/postfix
+data_directory = /var/lib/postfix
+mail_owner = postfix
+
+# Virtual Domains and Mailboxes
+virtual_mailbox_domains = qutemail.local
+virtual_mailbox_base = /var/mail/vhosts
+virtual_mailbox_maps = hash:/etc/postfix/virtual_mailbox
+virtual_minimum_uid = 1000
+virtual_uid_maps = static:5000
+virtual_gid_maps = static:5000
+virtual_alias_maps = hash:/etc/postfix/virtual_alias
+
+# Dovecot LMTP Delivery
+# Deliver mail to Dovecot via LMTP protocol
+virtual_transport = lmtp:dovecot:24
+
+# SMTP Settings
+smtpd_banner = $myhostname ESMTP
+biff = no
+append_dot_mydomain = no
+readme_directory = no
+
+# TLS Settings for SMTP
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+smtpd_tls_security_level = may
+smtpd_tls_loglevel = 1
+smtpd_tls_cert_file = /etc/ssl/certs/ssl-cert-snakeoil.pem
+smtpd_tls_key_file = /etc/ssl/private/ssl-cert-snakeoil.key
+smtpd_tls_session_cache_database = btree:${data_directory}/smtpd_scache
+smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
+
+# SASL Authentication (for Django to submit emails)
+smtpd_sasl_type = dovecot
+smtpd_sasl_path = private/auth
+smtpd_sasl_auth_enable = yes
+smtpd_sasl_security_options = noanonymous
+smtpd_sasl_local_domain = $mydomain
+broken_sasl_auth_clients = yes
+
+# Recipient Restrictions
+smtpd_recipient_restrictions =
+    permit_mynetworks,
+    permit_sasl_authenticated,
+    reject_unauth_destination,
+    reject_invalid_hostname,
+    reject_non_fqdn_sender,
+    reject_non_fqdn_recipient,
+    reject_unknown_sender_domain,
+    reject_unknown_recipient_domain
+
+# Message Size Limits
+message_size_limit = 26214400
+mailbox_size_limit = 0
+
+# OpenDKIM Integration
+# Milter configuration for DKIM signing
+milter_default_action = accept
+milter_protocol = 6
+smtpd_milters = inet:opendkim:8891
+non_smtpd_milters = $smtpd_milters
+
+# Logging
+maillog_file = /var/log/postfix/postfix.log
+debug_peer_level = 2
+
+# Performance Tuning
+smtpd_timeout = 300s
+smtp_connect_timeout = 30s
+default_destination_concurrency_limit = 20
