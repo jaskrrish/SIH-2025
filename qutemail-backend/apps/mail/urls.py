@@ -10,6 +10,7 @@ from mail.viewsets import (
     UserEmailSettingsViewSet,
     LabelViewSet,
 )
+from . import views
 
 # Create router for viewsets
 router = DefaultRouter()
@@ -20,4 +21,5 @@ router.register(r'labels', LabelViewSet, basename='label')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('sync/<int:account_id>', views.sync_email_account, name='sync'),
 ]
