@@ -56,4 +56,7 @@ class SendEmailSerializer(serializers.Serializer):
     subject = serializers.CharField()
     body_text = serializers.CharField()
     body_html = serializers.CharField(required=False, allow_blank=True)
-    use_quantum = serializers.BooleanField(default=False)  # For future QKD integration
+    security_level = serializers.ChoiceField(
+        choices=['regular', 'aes', 'qkd', 'qrng_pqc'],
+        default='regular'
+    )

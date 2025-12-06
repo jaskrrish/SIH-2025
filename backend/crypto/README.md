@@ -1,103 +1,163 @@
-# Crypto App - Expected Interface
+# Crypto Module - Multi-Level Encryption System
 
-This directory is reserved for the cryptography implementation team. The crypto app should provide encryption and decryption functions that can be integrated with the QuteMail system.
+The crypto module provides pluggable encryption/decryption with 4 security levels:
+- **Regular** - No encryption (passthrough)
+- **Standard AES** - AES-256-GCM encryption
+- **QKD+AES** - Quantum Key Distribution with AES-256-GCM
+- **QRNG+PQC** - Quantum Random Number Generator with Post-Quantum Cryptography (stub)
 
-## Expected Interface
+## 📁 Module Structure
 
-The crypto team should implement the following functions:
-
-```python
-def encrypt(plaintext_bytes: bytes, level: str, key_material: dict) -> bytes:
-    """
-    Encrypt plaintext data using quantum-safe cryptography.
-    
-    Args:
-        plaintext_bytes: The data to encrypt (email body, attachments, etc.)
-        level: Security level ('standard', 'high', 'quantum-safe')
-        key_material: Dictionary containing:
-            - 'key': Base64-encoded encryption key (from KM service)
-            - 'keyId': Key identifier for later retrieval
-            - 'algorithm': Preferred algorithm (e.g., 'AES-256-GCM', 'ChaCha20-Poly1305')
-    
-    Returns:
-        Encrypted data as bytes
-    
-    Example:
-        key_response = requests.post('http://localhost:8000/api/km/get_key/')
-        key_data = key_response.json()
-        
-        cipher_bytes = encrypt(
-            plaintext_bytes=b"Secret email content",
-            level="quantum-safe",
-            key_material={
-                'key': key_data['key'],
-                'keyId': key_data['keyId'],
-                'algorithm': 'AES-256-GCM'
-            }
-        )
-    """
-    pass
-
-
-def decrypt(cipher_bytes: bytes, level: str, key_material: dict) -> bytes:
-    """
-    Decrypt ciphertext data.
-    
-    Args:
-        cipher_bytes: The encrypted data to decrypt
-        level: Security level used during encryption
-        key_material: Dictionary containing:
-            - 'key': Base64-encoded decryption key (from KM service)
-            - 'keyId': Key identifier
-            - 'algorithm': Algorithm used for encryption
-    
-    Returns:
-        Decrypted plaintext as bytes
-    
-    Example:
-        key_response = requests.post('http://localhost:8000/api/km/get_key_with_id/',
-                                     json={'keyId': key_id})
-        key_data = key_response.json()
-        
-        plaintext_bytes = decrypt(
-            cipher_bytes=encrypted_data,
-            level="quantum-safe",
-            key_material={
-                'key': key_data['key'],
-                'keyId': key_data['keyId'],
-                'algorithm': 'AES-256-GCM'
-            }
-        )
-    """
-    pass
+```
+crypto/
+├── __init__.py           # Module initialization
+├── router.py             # Security level dispatcher
+├── level_regular.py      # No encryption
+├── level_aes.py          # AES-256-GCM implementation
+├── level_qkd.py          # QKD+AES implementation
+└── level_qrng_pqc.py     # QRNG+PQC stub
 ```
 
-## Integration with QuteMail
+## 🔌 Router Interface
 
-To integrate your crypto implementation with QuteMail, you need to modify the hooks in `qmailbox/hooks.py`:
+### Encrypt
+```python
+from crypto import router
+
+result = router.encrypt(
+    security_level='qkd',
+    plaintext=b'Hello, World!',
+    requester_sae='alice@example.com',
+    recipient_sae='bob@example.com'
+)
+
+# Returns:
+# {
+#     'ciphertext': 'base64...',
+#     'metadata': {
+#         'security_level': 'qkd',
+#         'algorithm': 'QKD+AES-256-GCM',
+#         'key_id': 'uuid',
+#         'nonce_size': 12,
+#         'tag_size': 16,
+#         'expiry': 1701791400
+#     }
+# }
+```
+
+### Decrypt
+```python
+plaintext = router.decrypt(
+    security_level='qkd',
+    ciphertext='base64...',
+    key_id='uuid',
+    requester_sae='bob@example.com'
+)
+
+# Returns: b'Hello, World!'
+```
+
+---
+
+## 🔐 Security Levels
+
+### 1. Regular (No Encryption)
+**Module:** `level_regular.py`
+
+Simple passthrough - no encryption applied.
 
 ```python
-# In qmailbox/hooks.py
-from crypto import encrypt, decrypt
-import requests
-import base64
+encrypt(plaintext) -> {'ciphertext': plaintext, 'metadata': {}}
+decrypt(ciphertext) -> ciphertext
+```
 
-def encrypt_and_send_hook(plaintext_bytes, subject, meta=None):
-    """Replace this function with your encryption logic."""
-    # Get key from KM service
-    key_response = requests.post('http://localhost:8000/api/km/get_key/')
-    key_data = key_response.json()
-    
-    # Encrypt using your crypto module
-    from crypto import encrypt
-    cipher_bytes = encrypt(
-        plaintext_bytes=plaintext_bytes,
-        level=meta.get('security_level', 'standard'),
-        key_material={
-            'key': key_data['key'],
-            'keyId': key_data['keyId'],
-            'algorithm': 'AES-256-GCM'
-        }
+---
+
+### 2. Standard AES (AES-256-GCM)
+**Module:** `level_aes.py`
+
+Uses AES-256-GCM with randomly generated keys.
+
+**Encryption:**
+```python
+result = level_aes.encrypt(
+    plaintext=b'Secret message',
+    # Optional: key_material (32 bytes)
+    # Optional: passphrase (will derive key with PBKDF2)
+)
+
+# If neither key_material nor passphrase provided:
+# - Generates random 32-byte key
+# - Stores key in metadata['key'] (base64)
+# - Generates 12-byte nonce
+# - Returns: base64(nonce || ciphertext || tag)
+```
+
+**Key Storage:**
+- Key transmitted in `X-QuteMail-AES-Key` email header
+- For production: use key exchange or encrypt the key
+
+**Decryption:**
+```python
+plaintext = level_aes.decrypt(
+    ciphertext='base64...',
+    key_material=base64.b64decode(key_b64)
+)
+```
+
+---
+
+### 3. QKD+AES (Quantum Key Distribution)
+**Module:** `level_qkd.py`
+
+Uses BB84 QKD simulator to generate key pairs, then encrypts with AES-256-GCM.
+
+**Encryption Flow:**
+```python
+result = level_qkd.encrypt(
+    plaintext=b'Secret message',
+    requester_sae='alice@example.com',
+    recipient_sae='bob@example.com'
+)
+
+# 1. Calls km_client.generate_key() -> BB84 simulator
+# 2. Gets alice_key (sender) and stores bob_key (recipient)
+# 3. Encrypts with AES-256-GCM using alice_key
+# 4. Returns ciphertext + metadata with key_id
+```
+
+**Key Management:**
+- **Alice Key**: Used by sender for encryption
+- **Bob Key**: Stored in KM, used by recipient for decryption
+- **Key ID**: UUID linking sender/recipient keys
+- **Authorization**: Only recipient can retrieve bob_key
+- **OTP Semantics**: Key consumed after first use
+
+**Decryption Flow:**
+```python
+plaintext = level_qkd.decrypt(
+    ciphertext='base64...',
+    key_id='uuid',
+    requester_sae='bob@example.com',
+    mark_consumed=True
+)
+
+# 1. Calls km_client.get_key_by_id() with authorization check
+# 2. Retrieves bob_key (must be recipient)
+# 3. Decrypts with AES-256-GCM
+# 4. Marks key as consumed
+```
+
+---
+
+### 4. QRNG+PQC (Post-Quantum Cryptography)
+**Module:** `level_qrng_pqc.py`
+
+Placeholder for future implementation.
+
+```python
+encrypt() -> raises NotImplementedError("Coming soon")
+decrypt() -> raises NotImplementedError("Coming soon")
     )
     
     # Return cipher and custom headers

@@ -43,10 +43,8 @@ INSTALLED_APPS = [
     "accounts",
     "email_accounts",
     "mail",
-    "qmailbox",
     "crypto",
     "km",
-    "api",
 ]
 
 MIDDLEWARE = [

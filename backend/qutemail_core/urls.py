@@ -29,7 +29,5 @@ urlpatterns = [
     # Mail (IMAP/SMTP)
     path("api/mail/", include("mail.urls")),  # /api/mail/sync, send, list
     
-    # Legacy endpoints (keep for crypto integration)
-    path("api/", include("api.urls")),  # /api/send/, /api/receive/
     path("api/km/", include("km.urls")),  # KM simulator endpoints
 ]

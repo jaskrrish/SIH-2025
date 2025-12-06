@@ -100,6 +100,46 @@ class IMAPClient:
         else:
             body_text = email_message.get_payload(decode=True).decode(errors='ignore')
         
+        # Check for encryption headers and decrypt if needed
+        security_level = email_message.get('X-QuteMail-Security-Level')
+        is_encrypted = email_message.get('X-QuteMail-Encrypted') == 'true'
+        
+        if is_encrypted and security_level and security_level != 'regular':
+            try:
+                from crypto import router as crypto_router
+                import base64
+                
+                # Prepare decryption parameters based on security level
+                decrypt_kwargs = {
+                    'ciphertext': body_text,
+                    'requester_sae': self.account.email
+                }
+                
+                # Add level-specific parameters
+                if security_level == 'qkd':
+                    key_id = email_message.get('X-QuteMail-Key-ID')
+                    if key_id:
+                        decrypt_kwargs['key_id'] = key_id
+                elif security_level == 'aes':
+                    aes_key = email_message.get('X-QuteMail-AES-Key')
+                    aes_salt = email_message.get('X-QuteMail-AES-Salt')
+                    if aes_key:
+                        decrypt_kwargs['key_material'] = base64.b64decode(aes_key)
+                    elif aes_salt:
+                        # Would need passphrase - not implemented in this flow
+                        decrypt_kwargs['salt'] = base64.b64decode(aes_salt)
+                
+                # Decrypt the body
+                decrypted_bytes = crypto_router.decrypt(
+                    security_level=security_level,
+                    **decrypt_kwargs
+                )
+                body_text = decrypted_bytes.decode('utf-8')
+                print(f"[IMAP] Successfully decrypted email with security level: {security_level}")
+            except Exception as e:
+                print(f"[IMAP] Decryption failed: {str(e)}")
+                body_text = f"[Encrypted message - decryption failed: {str(e)}]\n\nCiphertext: {body_text}"
+        
         # Get date
         date_str = email_message.get('Date')
         sent_at = email.utils.parsedate_to_datetime(date_str) if date_str else datetime.now()

@@ -45,7 +45,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
-  const [encryptionMethod, setEncryptionMethod] = useState<'aes' | 'quantum'>('quantum');
+  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qkd' | 'qrng_pqc'>('qkd');
   
   // Compose form state
   const [composeTo, setComposeTo] = useState('');
@@ -114,7 +114,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
         composeSubject,
         composeBody,
         undefined,
-        encryptionMethod === 'quantum'
+        encryptionMethod
       );
       
       // Close compose and refresh emails
@@ -198,48 +198,88 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
 
                 {/* Encryption Selection */}
                 <div className="space-y-3">
-                  <label className="text-sm font-medium text-gray-500">Encryption Method</label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <label className="text-sm font-medium text-gray-500">Security Level</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Regular - No Encryption */}
+                    <button
+                      onClick={() => setEncryptionMethod('regular')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'regular'
+                          ? "bg-gray-50 border-gray-300 ring-1 ring-gray-400"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'regular' ? "bg-gray-200 text-gray-600" : "bg-gray-100 text-gray-400")}>
+                          <SendIcon className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'regular' ? "text-gray-900" : "text-gray-600")}>Regular</span>
+                      </div>
+                      <p className="text-xs text-gray-500">No encryption</p>
+                      {encryptionMethod === 'regular' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-gray-500" />
+                      )}
+                    </button>
+
+                    {/* Standard AES */}
                     <button
                       onClick={() => setEncryptionMethod('aes')}
                       className={cn(
-                        "p-4 rounded-xl border text-left transition-all relative overflow-hidden",
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
                         encryptionMethod === 'aes'
                           ? "bg-blue-50 border-blue-200 ring-1 ring-blue-500"
                           : "bg-white border-gray-200 hover:border-gray-300"
                       )}
                     >
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className={cn("p-2 rounded-lg", encryptionMethod === 'aes' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500")}>
-                          <Lock className="h-5 w-5" />
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'aes' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400")}>
+                          <Lock className="h-4 w-4" />
                         </div>
-                        <span className={cn("font-semibold", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-700")}>Standard</span>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>Standard AES</span>
                       </div>
-                      <p className="text-xs text-gray-500">Normal email sending via SMTP.</p>
+                      <p className="text-xs text-gray-500">AES-256-GCM encryption</p>
                       {encryptionMethod === 'aes' && (
-                        <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-blue-500" />
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-500" />
                       )}
                     </button>
 
+                    {/* QKD + AES */}
                     <button
-                      onClick={() => setEncryptionMethod('quantum')}
+                      onClick={() => setEncryptionMethod('qkd')}
                       className={cn(
-                        "p-4 rounded-xl border text-left transition-all relative overflow-hidden",
-                        encryptionMethod === 'quantum'
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'qkd'
                           ? "bg-emerald-50 border-emerald-200 ring-1 ring-emerald-500"
                           : "bg-white border-gray-200 hover:border-gray-300"
                       )}
                     >
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className={cn("p-2 rounded-lg", encryptionMethod === 'quantum' ? "bg-isro-blue/10 text-isro-blue" : "bg-gray-100 text-gray-500")}>
-                          <ShieldCheck className="h-5 w-5" />
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'qkd' ? "bg-isro-blue/10 text-isro-blue" : "bg-gray-100 text-gray-400")}>
+                          <ShieldCheck className="h-4 w-4" />
                         </div>
-                        <span className={cn("font-semibold", encryptionMethod === 'quantum' ? "text-isro-blue" : "text-gray-700")}>Quantum Secure</span>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'qkd' ? "text-isro-blue" : "text-gray-600")}>QKD + AES</span>
                       </div>
-                      <p className="text-xs text-gray-500">Placeholder for quantum encryption.</p>
-                      {encryptionMethod === 'quantum' && (
-                        <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-emerald-500" />
+                      <p className="text-xs text-gray-500">BB84 quantum keys</p>
+                      {encryptionMethod === 'qkd' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
                       )}
+                    </button>
+
+                    {/* QRNG + PQC - Disabled/Coming Soon */}
+                    <button
+                      disabled
+                      className="p-3 rounded-xl border text-left transition-all relative overflow-hidden bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed"
+                      title="Coming soon"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="p-1.5 rounded-lg bg-purple-100 text-purple-400">
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <span className="font-semibold text-sm text-gray-500">QRNG + PQC</span>
+                      </div>
+                      <p className="text-xs text-gray-400">Coming soon</p>
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-[10px] font-medium rounded">SOON</div>
                     </button>
                   </div>
                 </div>

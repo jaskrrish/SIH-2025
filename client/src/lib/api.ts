@@ -150,7 +150,7 @@ export const api = {
         return response.json();
     },
     
-    async sendEmail(accountId: number, toEmails: string[], subject: string, bodyText: string, bodyHtml?: string, useQuantum = false) {
+    async sendEmail(accountId: number, toEmails: string[], subject: string, bodyText: string, bodyHtml?: string, securityLevel: 'regular' | 'aes' | 'qkd' | 'qrng_pqc' = 'regular') {
         const response = await fetch(API_ENDPOINTS.MAIL.SEND, {
             method: 'POST',
             headers: {
@@ -163,7 +163,7 @@ export const api = {
                 subject,
                 body_text: bodyText,
                 body_html: bodyHtml,
-                use_quantum: useQuantum
+                security_level: securityLevel
             })
         });
         

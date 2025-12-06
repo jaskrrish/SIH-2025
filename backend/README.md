@@ -1,27 +1,48 @@
-# QuteMail Backend - Development Scaffold
+# QuteMail Backend - Quantum-Safe Email System
 
-A minimal Django backend for QuteMail quantum-safe email system. This scaffold provides the basic structure for frontend development and team collaboration without implementing actual encryption/key management internals.
+A Django backend for QuteMail quantum-safe email system with integrated encryption, QKD key management, and external email provider support (Gmail, Outlook, Yahoo).
 
-## 🎯 Project Goals
+## 🎯 Project Overview
 
-- **Minimal & Flexible**: Basic structure that doesn't lock in implementation details
-- **Team Independence**: Frontend, crypto, and KM teams can work in parallel
-- **Pluggable Architecture**: Easy integration of crypto/KM modules later
-- **Development-Ready**: Works out of the box for local development
+QuteMail is a complete email system featuring:
+- **Multi-level Encryption**: Regular, AES-256-GCM, QKD+AES, QRNG+PQC
+- **BB84 QKD Simulator**: Quantum key distribution for secure communication
+- **External Email Integration**: Connect Gmail/Outlook via IMAP/SMTP
+- **JWT Authentication**: Secure user authentication
+- **Real-time Email Sync**: Fetch and decrypt emails automatically
 
 ## 📁 Project Structure
 
 ```
 backend/
-├── api/                  # Main API endpoints (/api/send/, /api/receive/)
-├── qmailbox/             # Email helpers (SMTP, hooks)
-│   ├── smtp.py          # SMTP sending functionality
-│   └── hooks.py         # Pluggable encryption/decryption hooks
-├── crypto/               # Crypto module (interface only)
-│   └── README.md        # Expected interface documentation
-├── km/                   # Key Management simulator
-│   └── views.py         # KM API endpoints
+├── accounts/             # User authentication (JWT)
+│   ├── models.py        # Custom User model
+│   ├── views.py         # Register, login, user info
+│   └── urls.py          # /api/auth/* endpoints
+├── email_accounts/       # External email connections
+│   ├── models.py        # EmailAccount model (Gmail, etc.)
+│   ├── views.py         # Connect, list, delete accounts
+│   └── urls.py          # /api/email-accounts/* endpoints
+├── mail/                 # Email operations (IMAP/SMTP)
+│   ├── models.py        # Email, Attachment models
+│   ├── views.py         # Sync, send, list emails
+│   ├── imap_client.py   # IMAP fetching with auto-decryption
+│   ├── smtp_client.py   # SMTP sending with encryption headers
+│   └── urls.py          # /api/mail/* endpoints
+├── crypto/               # Encryption modules
+│   ├── router.py        # Security level dispatcher
+│   ├── level_regular.py # No encryption (passthrough)
+│   ├── level_aes.py     # AES-256-GCM encryption
+│   ├── level_qkd.py     # QKD+AES encryption
+│   └── level_qrng_pqc.py # QRNG+PQC (stub)
+├── km/                   # Key Management
+│   ├── client.py        # KM client wrapper
+│   ├── simulator.py     # BB84 QKD simulator
+│   ├── views.py         # KM API endpoints
+│   └── urls.py          # /api/km/* endpoints
 ├── qutemail_core/        # Django project settings
+│   ├── settings.py      # Configuration
+│   └── urls.py          # Main URL routing
 └── manage.py
 ```
 
@@ -63,268 +84,248 @@ Server will start at `http://localhost:8000`
 
 ## 📡 API Endpoints
 
-### 1. Send Email - `POST /api/send/`
+### Authentication (`/api/auth/`)
 
-Send an email with optional encryption via pluggable hooks.
+#### Register
+```http
+POST /api/auth/register
+Content-Type: application/json
 
-**Request:**
-```json
 {
-  "from": "sender@example.com",
-  "to": ["recipient@example.com"],
+  "username": "surya",
+  "name": "Jeyasurya",
+  "password": "password123",
+  "confirm_password": "password123"
+}
+```
+
+#### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "username": "surya",
+  "password": "password123"
+}
+
+Response: { "user": {...}, "tokens": { "access": "...", "refresh": "..." } }
+```
+
+#### Get Current User
+```http
+GET /api/auth/me
+Authorization: Bearer <access_token>
+```
+
+---
+
+### Email Accounts (`/api/email-accounts/`)
+
+#### Connect External Account
+```http
+POST /api/email-accounts/connect
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "provider": "gmail",
+  "email": "your-email@gmail.com",
+  "app_password": "your-16-char-app-password"
+}
+```
+
+**Note**: For Gmail app passwords: https://myaccount.google.com/apppasswords
+
+#### List Accounts
+```http
+GET /api/email-accounts/
+Authorization: Bearer <access_token>
+```
+
+#### Delete Account
+```http
+DELETE /api/email-accounts/{id}
+Authorization: Bearer <access_token>
+```
+
+---
+
+### Mail Operations (`/api/mail/`)
+
+#### Sync Emails (IMAP Fetch)
+```http
+GET /api/mail/sync/{account_id}
+Authorization: Bearer <access_token>
+```
+Fetches emails from external provider and automatically decrypts encrypted messages.
+
+#### List Emails
+```http
+GET /api/mail/?account_id={id}&limit=50
+Authorization: Bearer <access_token>
+```
+
+#### Get Single Email
+```http
+GET /api/mail/{email_id}
+Authorization: Bearer <access_token>
+```
+
+#### Send Email
+```http
+POST /api/mail/send
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "account_id": 1,
+  "to_emails": ["recipient@gmail.com"],
   "subject": "Test Email",
-  "body": "This is a test email body.",
-  "meta": {
-    "security_level": "high",
-    "priority": "urgent"
-  }
+  "body_text": "Hello, this is a test email",
+  "body_html": "<p>Hello, this is a test email</p>",
+  "security_level": "qkd"
 }
 ```
 
-**Response:**
-```json
+**Security Levels:**
+- `regular` - No encryption
+- `aes` - AES-256-GCM encryption (key in headers)
+- `qkd` - QKD+AES encryption (BB84 key distribution)
+- `qrng_pqc` - QRNG+PQC (not yet implemented)
+
+---
+
+### Key Management (`/api/km/`)
+
+#### Service Status
+```http
+GET /api/km/status/
+```
+
+#### Generate QKD Key
+```http
+POST /api/km/get_key/
+Content-Type: application/json
+
 {
-  "status": "sent",
-  "encrypted": false,
-  "info": {
-    "status": "sent_mock",
-    "message_id": "mock-message-id",
-    "recipients": ["recipient@example.com"]
-  }
-}
-```
-
-**cURL Example:**
-```bash
-curl -X POST http://localhost:8000/api/send/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "from": "sender@example.com",
-    "to": ["recipient@example.com"],
-    "subject": "Test Email",
-    "body": "Hello, World!"
-  }'
-```
-
-**PowerShell Example:**
-```powershell
-$body = @{
-    from = "sender@example.com"
-    to = @("recipient@example.com")
-    subject = "Test Email"
-    body = "Hello, World!"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://localhost:8000/api/send/" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-### 2. Receive Email - `POST /api/receive/`
-
-Parse and optionally decrypt a received email.
-
-**Request:**
-```json
-{
-  "raw_mime": "From: sender@example.com\nTo: recipient@example.com\nSubject: Test\n\nEmail body here",
-  "meta": {
-    "source": "imap",
-    "mailbox": "INBOX"
-  }
-}
-```
-
-**Response:**
-```json
-{
-  "status": "ok",
-  "subject": "Test",
-  "body": "Email body here",
-  "from": "sender@example.com",
-  "to": ["recipient@example.com"],
-  "encrypted": false,
-  "headers": {
-    "From": "sender@example.com",
-    "To": "recipient@example.com",
-    "Subject": "Test"
-  }
-}
-```
-
-**cURL Example:**
-```bash
-curl -X POST http://localhost:8000/api/receive/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "raw_mime": "From: sender@example.com\nTo: recipient@example.com\nSubject: Test\n\nEmail body"
-  }'
-```
-
-### 3. KM Status - `GET /api/km/status/`
-
-Check Key Management service status.
-
-**Response:**
-```json
-{
-  "status": "OK",
-  "service": "qute-km-sim",
-  "version": "1.0.0-dev",
-  "keys_in_store": 0,
-  "note": "This is a development simulator. Replace with real KM service in production."
-}
-```
-
-**cURL Example:**
-```bash
-curl http://localhost:8000/api/km/status/
-```
-
-### 4. Get Key - `POST /api/km/get_key/`
-
-Generate a new encryption key.
-
-**Request (optional body):**
-```json
-{
-  "size": 32,
-  "purpose": "email-encryption",
+  "requester_sae": "alice@example.com",
+  "recipient_sae": "bob@example.com",
+  "key_size": 256,
   "ttl": 3600
 }
 ```
 
-**Response:**
-```json
+#### Retrieve Key by ID
+```http
+POST /api/km/get_key_with_id/
+Content-Type: application/json
+
 {
-  "status": "success",
-  "keyId": "550e8400-e29b-41d4-a716-446655440000",
-  "key": "base64encodedkey...",
-  "size": 32,
-  "created": "2025-12-04T10:30:00Z",
-  "expires": "2025-12-04T11:30:00Z",
-  "note": "Simulated key - not from real QKD hardware"
+  "key_id": "uuid",
+  "requester_sae": "bob@example.com",
+  "mark_consumed": true
 }
 ```
 
-**cURL Example:**
-```bash
-curl -X POST http://localhost:8000/api/km/get_key/ \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
+---
 
-### 5. Get Key By ID - `POST /api/km/get_key_with_id/`
+## 🔐 Encryption Flow
 
-Retrieve an existing key by its ID.
+### **Sending Encrypted Email (QKD+AES)**
 
-**Request:**
-```json
-{
-  "keyId": "550e8400-e29b-41d4-a716-446655440000"
-}
-```
+1. **Frontend** → User composes email, selects `qkd` security level
+2. **`mail/views.py`** → Calls `crypto.router.encrypt(security_level='qkd', plaintext=body_bytes)`
+3. **`crypto/router.py`** → Routes to `level_qkd.encrypt()`
+4. **`crypto/level_qkd.py`** → Calls `km_client.generate_key()` to get QKD key
+5. **`km/client.py`** → Uses `BB84Simulator` to generate alice_key and bob_key
+   - Returns alice_key to sender (for encryption)
+   - Stores bob_key in key store with UUID
+6. **`crypto/level_qkd.py`** → Calls `level_aes.encrypt()` with alice_key
+7. **`crypto/level_aes.py`** → Encrypts using AES-256-GCM, returns base64(nonce||ciphertext||tag)
+8. **`mail/smtp_client.py`** → Adds custom headers:
+   - `X-QuteMail-Security-Level: qkd`
+   - `X-QuteMail-Key-ID: <uuid>`
+   - `X-QuteMail-Encrypted: true`
+9. **SMTP** → Sends encrypted email via Gmail
 
-**Response:**
-```json
-{
-  "status": "success",
-  "keyId": "550e8400-e29b-41d4-a716-446655440000",
-  "key": "base64encodedkey...",
-  "size": 32,
-  "created": "2025-12-04T10:30:00Z",
-  "expires": "2025-12-04T11:30:00Z"
-}
-```
+### **Receiving Encrypted Email (QKD+AES)**
 
-## 🔌 Integration Guide
+1. **Frontend** → User clicks "Sync"
+2. **`mail/views.py`** → Calls `IMAPClient.fetch_emails()`
+3. **`mail/imap_client.py`** → Fetches emails via IMAP
+4. **`_parse_email()`** → Detects `X-QuteMail-Encrypted: true` header
+5. **Decryption** → Calls `crypto.router.decrypt(security_level='qkd', ciphertext=body, key_id=uuid)`
+6. **`crypto/level_qkd.py`** → Calls `km_client.get_key_by_id(key_id, requester_sae=recipient)`
+7. **`km/client.py`** → Retrieves bob_key from store, validates authorization
+8. **`crypto/level_qkd.py`** → Calls `level_aes.decrypt()` with bob_key
+9. **`crypto/level_aes.py`** → Decrypts AES-256-GCM, verifies GCM tag
+10. **Database** → Stores decrypted plaintext
+11. **Frontend** → Displays original message
 
-### For Crypto Team
+---
 
-1. Implement encryption/decryption functions in `crypto/` app
-2. See `crypto/README.md` for expected interface
-3. Modify `qmailbox/hooks.py` to call your functions:
+## 🔬 BB84 QKD Simulator
+
+The `km/simulator.py` implements a simplified BB84 protocol:
 
 ```python
-# In qmailbox/hooks.py
-from crypto import encrypt, decrypt
-import requests
-
-def encrypt_and_send_hook(plaintext_bytes, subject, meta=None):
-    # Get key from KM
-    key_response = requests.post('http://localhost:8000/api/km/get_key/')
-    key_data = key_response.json()
-    
-    # Encrypt
-    cipher_bytes = encrypt(plaintext_bytes, 'standard', {
-        'key': key_data['key'],
-        'keyId': key_data['keyId'],
-        'algorithm': 'AES-256-GCM'
-    })
-    
-    # Return encrypted data with headers
-    headers = {
-        'X-QuteMail-Encrypted': 'true',
-        'X-QuteMail-Key-ID': key_data['keyId'],
-        'X-QuteMail-Algorithm': 'AES-256-GCM'
-    }
-    return (cipher_bytes, headers)
+class BB84Simulator:
+    def generate_key_pair(key_size=256) -> Tuple[QKDKey, QKDKey]:
+        # 1. Alice generates random bits and bases
+        # 2. Bob randomly chooses measurement bases
+        # 3. After measurement, they compare bases
+        # 4. Keep bits where bases matched
+        # 5. Return matching key material for both parties
 ```
 
-### For KM Team
+**Key Features:**
+- Generates matching key pairs (alice_key, bob_key)
+- Simulates quantum channel with configurable error rate
+- Returns QKDKey objects with `key_material` (bytes)
+- Used for demo/testing (replace with real QKD hardware in production)
 
-Replace the simulator in `km/views.py` with real KM service integration:
-- Connect to actual QKD hardware
-- Implement ETSI QKD 014 API client
-- Add proper key lifecycle management
-- Implement audit logging
+---
 
-### For Frontend Team
+## 🧪 Testing Examples
 
-Use the provided REST API endpoints:
-- `POST /api/send/` - Send emails
-- `POST /api/receive/` - Parse received emails
-- `GET /api/km/status/` - Check KM service health
+### Test 1: Register & Login
 
-CORS is enabled for all origins in development mode.
+```bash
+# Register
+curl -X POST http://127.0.0.1:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"surya","name":"Jeyasurya","password":"test123","confirm_password":"test123"}'
 
-## 🧪 Testing the Full Flow
-
-### Test 1: Send Plaintext Email
-
-```powershell
-$body = @{
-    from = "alice@example.com"
-    to = @("bob@example.com")
-    subject = "Hello Bob"
-    body = "This is a plaintext message"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Uri "http://localhost:8000/api/send/" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body $body
+# Login
+curl -X POST http://127.0.0.1:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"surya","password":"test123"}'
 ```
 
-### Test 2: Get a Key from KM
+### Test 2: Connect Gmail
 
-```powershell
-$keyResponse = Invoke-RestMethod -Uri "http://localhost:8000/api/km/get_key/" `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body '{}'
-
-Write-Host "Key ID: $($keyResponse.keyId)"
-Write-Host "Key: $($keyResponse.key)"
+```bash
+curl -X POST http://127.0.0.1:8000/api/email-accounts/connect \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"gmail","email":"your@gmail.com","app_password":"abcd efgh ijkl mnop"}'
 ```
 
-### Test 3: Retrieve Key by ID
+### Test 3: Send QKD-Encrypted Email
 
-```powershell
-$body = @{
-    keyId = $keyResponse.keyId
-} | ConvertTo-Json
+```bash
+curl -X POST http://127.0.0.1:8000/api/mail/send \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"account_id":1,"to_emails":["recipient@gmail.com"],"subject":"Secret","body_text":"This is encrypted with QKD","security_level":"qkd"}'
+```
+
+### Test 4: Sync and Decrypt Emails
+
+```bash
+curl http://127.0.0.1:8000/api/mail/sync/1 \
+  -H "Authorization: Bearer <token>"
 
 Invoke-RestMethod -Uri "http://localhost:8000/api/km/get_key_with_id/" `
   -Method Post `

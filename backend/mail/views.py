@@ -133,8 +133,36 @@ def send_email(request):
         return Response({'error': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
     
     try:
-        # TODO: If use_quantum is True, integrate with crypto hooks from qmailbox
-        # For now, send normally
+        security_level = data.get('security_level', 'regular')
+        
+        # Prepare email content
+        email_content = data['body_text']
+        encrypted_metadata = None
+        
+        # Encrypt if security level is not 'regular'
+        if security_level != 'regular':
+            from crypto import router as crypto_router
+            
+            # Encrypt email body
+            try:
+                encryption_result = crypto_router.encrypt(
+                    security_level=security_level,
+                    plaintext=email_content.encode('utf-8'),  # Convert string to bytes
+                    requester_sae=account.email,
+                    recipient_sae=data['to_emails'][0] if data['to_emails'] else None
+                )
+                email_content = encryption_result['ciphertext']
+                encrypted_metadata = encryption_result['metadata']
+            except NotImplementedError:
+                return Response(
+                    {'error': f'Security level "{security_level}" is not yet implemented'},
+                    status=status.HTTP_501_NOT_IMPLEMENTED
+                )
+            except Exception as e:
+                return Response(
+                    {'error': f'Encryption failed: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         
         smtp_client = SMTPClient(account)
         smtp_client.connect()
@@ -142,16 +170,20 @@ def send_email(request):
         smtp_client.send_email(
             to_emails=data['to_emails'],
             subject=data['subject'],
-            body_text=data['body_text'],
+            body_text=email_content,
             body_html=data.get('body_html'),
-            from_name=request.user.name
+            from_name=request.user.name,
+            security_level=security_level,
+            encryption_metadata=encrypted_metadata
         )
         
         smtp_client.disconnect()
         
         return Response({
             'message': 'Email sent successfully',
-            'encrypted': data['use_quantum']  # Will be true when QKD is integrated
+            'security_level': security_level,
+            'encrypted': security_level != 'regular',
+            'metadata': encrypted_metadata
         })
     
     except Exception as e:

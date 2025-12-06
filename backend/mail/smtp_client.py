@@ -33,7 +33,8 @@ class SMTPClient:
             except:
                 pass
     
-    def send_email(self, to_emails, subject, body_text, body_html=None, from_name=None):
+    def send_email(self, to_emails, subject, body_text, body_html=None, from_name=None, 
+                   security_level='regular', encryption_metadata=None):
         """
         Send an email
         
@@ -43,6 +44,8 @@ class SMTPClient:
             body_text: Plain text body
             body_html: HTML body (optional)
             from_name: Sender display name (optional)
+            security_level: Security level used ('regular', 'aes', 'qkd', 'qrng_pqc')
+            encryption_metadata: Encryption metadata dict (for encrypted emails)
         """
         if not self.connection:
             self.connect()
@@ -52,6 +55,17 @@ class SMTPClient:
         msg['Subject'] = subject
         msg['From'] = formataddr((from_name or self.account.email, self.account.email))
         msg['To'] = ', '.join(to_emails) if isinstance(to_emails, list) else to_emails
+        
+        # Add custom headers for encrypted emails
+        if security_level != 'regular' and encryption_metadata:
+            msg['X-QuteMail-Security-Level'] = security_level
+            if 'key_id' in encryption_metadata:
+                msg['X-QuteMail-Key-ID'] = encryption_metadata['key_id']
+            if 'key' in encryption_metadata:
+                msg['X-QuteMail-AES-Key'] = encryption_metadata['key']
+            if 'salt' in encryption_metadata:
+                msg['X-QuteMail-AES-Salt'] = encryption_metadata['salt']
+            msg['X-QuteMail-Encrypted'] = 'true'
         
         # Set content
         msg.set_content(body_text)
