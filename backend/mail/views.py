@@ -28,7 +28,7 @@ def sync_emails(request, account_id):
         imap_client = IMAPClient(account)
         imap_client.connect()
         
-        fetched_emails = imap_client.fetch_emails(limit=50)
+        fetched_emails = imap_client.fetch_emails(limit=20)
         print(f"Fetched {len(fetched_emails)} emails from IMAP")
         imap_client.disconnect()
         

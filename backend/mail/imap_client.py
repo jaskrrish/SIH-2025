@@ -158,4 +158,5 @@ class IMAPClient:
             'body_text': body_text,
             'body_html': body_html,
             'sent_at': sent_at,
+            'is_encrypted': is_encrypted,  # Include encryption flag
         }
