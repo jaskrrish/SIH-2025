@@ -1,0 +1,645 @@
+import { useState, useEffect } from 'react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2 } from 'lucide-react';
+import { EncryptedText } from "@/components/ui/encrypted-text";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { api } from '@/lib/api';
+import AccessibilityTools from '@/components/AccessibilityTools';
+
+// Utility for tailwind class merging
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+interface MailboxProps {
+    account: {
+        id: string;
+        email: string;
+        provider: string;
+    };
+    onBack: () => void;
+}
+
+interface Email {
+  id: number;
+  message_id: string;
+  from_email: string;
+  from_name: string;
+  to_emails: string[];
+  subject: string;
+  body_text: string;
+  body_html: string;
+  sent_at: string;
+  is_read: boolean;
+  is_starred: boolean;
+  is_encrypted: boolean;
+}
+
+export default function Mailbox({ account, onBack }: MailboxProps) {
+  const [emails, setEmails] = useState<Email[]>([]);
+  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
+  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qkd' | 'qrng_pqc'>('qkd');
+  
+  // Compose form state
+  const [composeTo, setComposeTo] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Fetch emails on mount
+  useEffect(() => {
+    // Skip loading for qutemail account (it's not a real email account)
+    if (account.id === 'qutemail') {
+      setLoading(false);
+      return;
+    }
+    loadEmails();
+  }, [account.id]);
+
+  const loadEmails = async () => {
+    if (account.id === 'qutemail') return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      const data = await api.listEmails(parseInt(account.id));
+      setEmails(data);
+      if (data.length > 0 && !selectedEmail) {
+        setSelectedEmail(data[0]);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load emails');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    if (account.id === 'qutemail') {
+      alert('QuteMail is your internal account. Connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+      return;
+    }
+    
+    try {
+      setSyncing(true);
+      setError('');
+      await api.syncEmails(parseInt(account.id));
+      await loadEmails();
+      setLastSynced(new Date());
+    } catch (err: any) {
+      setError(err.message || 'Failed to sync emails');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!composeTo || !composeSubject || !composeBody) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    try {
+      setSending(true);
+      await api.sendEmail(
+        parseInt(account.id),
+        [composeTo],
+        composeSubject,
+        composeBody,
+        undefined,
+        encryptionMethod
+      );
+      
+      // Close compose and refresh emails
+      setIsComposeOpen(false);
+      setComposeTo('');
+      setComposeSubject('');
+      setComposeBody('');
+      await handleSync();
+    } catch (err: any) {
+      alert(err.message || 'Failed to send email');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const filteredEmails = emails.filter(email => {
+    // For now, all emails go to inbox - we'll add folder support later
+    if (selectedFolder === 'inbox') return true;
+    return false;
+  });
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    
+    if (days === 0) {
+      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    } else if (days === 1) {
+      return 'Yesterday';
+    } else if (days < 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short' });
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-full bg-gray-50 text-gray-900 font-sans overflow-hidden relative">
+      <AccessibilityTools />
+
+      {/* --- Compose Modal --- */}
+      {isComposeOpen && (
+        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50">
+              <h2 className="text-lg font-semibold text-gray-800">New Message</h2>
+              <button
+                onClick={() => setIsComposeOpen(false)}
+                className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 flex-1 overflow-y-auto">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <label className="w-16 text-sm font-medium text-gray-500">To</label>
+                  <input
+                    type="email"
+                    value={composeTo}
+                    onChange={(e) => setComposeTo(e.target.value)}
+                    className="flex-1 p-2 border-b border-gray-200 focus:border-isro-blue outline-none transition-colors"
+                    placeholder="recipient@example.com"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="w-16 text-sm font-medium text-gray-500">Subject</label>
+                  <input
+                    type="text"
+                    value={composeSubject}
+                    onChange={(e) => setComposeSubject(e.target.value)}
+                    className="flex-1 p-2 border-b border-gray-200 focus:border-isro-blue outline-none transition-colors"
+                    placeholder="Subject"
+                  />
+                </div>
+
+                {/* Encryption Selection */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-gray-500">Security Level</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Regular - No Encryption */}
+                    <button
+                      onClick={() => setEncryptionMethod('regular')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'regular'
+                          ? "bg-gray-50 border-gray-300 ring-1 ring-gray-400"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'regular' ? "bg-gray-200 text-gray-600" : "bg-gray-100 text-gray-400")}>
+                          <SendIcon className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'regular' ? "text-gray-900" : "text-gray-600")}>Regular</span>
+                      </div>
+                      <p className="text-xs text-gray-500">No encryption</p>
+                      {encryptionMethod === 'regular' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-gray-500" />
+                      )}
+                    </button>
+
+                    {/* Standard AES */}
+                    <button
+                      onClick={() => setEncryptionMethod('aes')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'aes'
+                          ? "bg-blue-50 border-blue-200 ring-1 ring-blue-500"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'aes' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400")}>
+                          <Lock className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>Standard AES</span>
+                      </div>
+                      <p className="text-xs text-gray-500">AES-256-GCM encryption</p>
+                      {encryptionMethod === 'aes' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-500" />
+                      )}
+                    </button>
+
+                    {/* QKD + AES */}
+                    <button
+                      onClick={() => setEncryptionMethod('qkd')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'qkd'
+                          ? "bg-emerald-50 border-emerald-200 ring-1 ring-emerald-500"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'qkd' ? "bg-isro-blue/10 text-isro-blue" : "bg-gray-100 text-gray-400")}>
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'qkd' ? "text-isro-blue" : "text-gray-600")}>QKD + AES</span>
+                      </div>
+                      <p className="text-xs text-gray-500">BB84 quantum keys</p>
+                      {encryptionMethod === 'qkd' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+
+                    {/* QRNG + PQC - Disabled/Coming Soon */}
+                    <button
+                      disabled
+                      className="p-3 rounded-xl border text-left transition-all relative overflow-hidden bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed"
+                      title="Coming soon"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="p-1.5 rounded-lg bg-purple-100 text-purple-400">
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <span className="font-semibold text-sm text-gray-500">QRNG + PQC</span>
+                      </div>
+                      <p className="text-xs text-gray-400">Coming soon</p>
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-[10px] font-medium rounded">SOON</div>
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  value={composeBody}
+                  onChange={(e) => setComposeBody(e.target.value)}
+                  className="w-full h-64 p-4 bg-gray-50 rounded-lg border-transparent focus:bg-white focus:ring-2 focus:ring-isro-blue focus:border-transparent resize-none outline-none text-gray-700"
+                  placeholder="Write your message here..."
+                ></textarea>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+              <div className="flex gap-2">
+                <button className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors">
+                  <Paperclip className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsComposeOpen(false)}
+                  className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
+                  disabled={sending}
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={sending}
+                  className={cn(
+                    "px-6 py-2 text-white font-medium rounded-lg shadow-lg flex items-center gap-2 transition-all",
+                    encryptionMethod === 'quantum'
+                      ? "bg-isro-orange hover:opacity-90 shadow-isro-orange/20"
+                      : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20",
+                    sending && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <span>{sending ? 'Sending...' : (encryptionMethod === 'quantum' ? 'Send Quantum Secure' : 'Send Normal')}</span>
+                  <SendIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- Sidebar --- */}
+      <div className={cn(
+        "flex flex-col bg-[#032848] text-slate-300 transition-all duration-300 ease-in-out",
+        sidebarOpen ? "w-64" : "w-20"
+      )}>
+        <div className={cn("p-4 flex items-center", sidebarOpen ? "justify-between" : "justify-center")}>
+          {sidebarOpen && (
+            <div className="flex items-center gap-2 font-bold text-white">
+              <ShieldCheck className="h-8 w-8 text-isro-orange" />
+              <span className="text-xl tracking-tight">QuteMail</span>
+            </div>
+          )}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-3 py-4">
+          <button
+            onClick={() => setIsComposeOpen(true)}
+            className={cn(
+              "flex items-center gap-3 w-full bg-isro-orange hover:opacity-90 text-white p-3 rounded-xl transition-all shadow-lg shadow-isro-orange/20 mb-6",
+              !sidebarOpen && "justify-center px-0"
+            )}>
+            <Plus className="h-5 w-5" />
+            {sidebarOpen && <span className="font-medium">Compose</span>}
+          </button>
+
+          {/* Sync Button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className={cn(
+              "flex items-center gap-3 w-full bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-xl transition-all mb-4",
+              !sidebarOpen && "justify-center px-0",
+              syncing && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <RefreshCw className={cn("h-5 w-5", syncing && "animate-spin")} />
+            {sidebarOpen && <span className="font-medium">{syncing ? 'Syncing...' : 'Sync Emails'}</span>}
+          </button>
+
+          {/* Last Synced Time */}
+          {sidebarOpen && lastSynced && (
+            <div className="text-xs text-slate-500 px-3 mb-4">
+              Last synced: {lastSynced.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            </div>
+          )}
+
+          {/* Back to Dashboard */}
+          <button
+            onClick={onBack}
+            className={cn(
+              "flex items-center gap-3 w-full text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 p-3 rounded-lg transition-all mb-6",
+              !sidebarOpen && "justify-center px-0"
+            )}
+          >
+            <ArrowLeft className="h-5 w-5" />
+            {sidebarOpen && <span>Back to Dashboard</span>}
+          </button>
+
+          <nav className="space-y-1">
+            <SidebarItem
+              icon={Inbox}
+              label="Inbox"
+              active={selectedFolder === 'inbox'}
+              collapsed={!sidebarOpen}
+              onClick={() => setSelectedFolder('inbox')}
+              count={filteredEmails.filter(e => !e.is_read).length}
+            />
+            <SidebarItem
+              icon={SendIcon}
+              label="Sent"
+              active={selectedFolder === 'sent'}
+              collapsed={!sidebarOpen}
+              onClick={() => setSelectedFolder('sent')}
+            />
+            <SidebarItem
+              icon={FileText}
+              label="Drafts"
+              active={selectedFolder === 'drafts'}
+              collapsed={!sidebarOpen}
+              onClick={() => setSelectedFolder('drafts')}
+            />
+            <SidebarItem
+              icon={Trash2}
+              label="Trash"
+              active={selectedFolder === 'trash'}
+              collapsed={!sidebarOpen}
+              onClick={() => setSelectedFolder('trash')}
+            />
+          </nav>
+        </div>
+
+        <div className="mt-auto p-4 border-t border-slate-800">
+          <div className={cn("flex flex-col gap-2", !sidebarOpen && "items-center")}>
+            {sidebarOpen && (
+              <div className="text-xs text-slate-500">
+                <div className="font-medium text-slate-400">{account.email}</div>
+                <div className="text-slate-600">{account.provider}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* --- Email List --- */}
+      <div className="flex flex-col w-80 border-r border-gray-200 bg-white">
+        <div className="p-4 border-b border-gray-100">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search emails..."
+              className="w-full pl-9 pr-4 py-2 bg-gray-100 border-transparent focus:bg-white focus:ring-2 focus:ring-isro-blue focus:border-transparent rounded-lg text-sm transition-all"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-32 text-gray-400">
+              <RefreshCw className="h-6 w-6 animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="p-4 text-sm text-red-600">{error}</div>
+          ) : account.id === 'qutemail' ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center">
+              <div className="h-16 w-16 bg-[#032848] rounded-full flex items-center justify-center mb-4">
+                <ShieldCheck className="h-8 w-8 text-[#f4711b]" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">QuteMail Account</h3>
+              <p className="text-sm text-gray-600 max-w-md mb-4">
+                This is your quantum-secure QuteMail account. To send and receive emails, please connect an external email account (Gmail, Outlook, etc.) from the Dashboard.
+              </p>
+              <button
+                onClick={() => window.history.back()}
+                className="px-4 py-2 bg-[#f4711b] text-white rounded-lg hover:opacity-90"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          ) : filteredEmails.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+              <Inbox className="h-8 w-8 mb-2" />
+              <p className="text-sm">No emails yet</p>
+              <button
+                onClick={handleSync}
+                className="mt-2 text-xs text-isro-blue hover:underline"
+              >
+                Sync now
+              </button>
+            </div>
+          ) : (
+            filteredEmails.map(email => (
+              <div
+                key={email.id}
+                onClick={() => setSelectedEmail(email)}
+                className={cn(
+                  "p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors",
+                  selectedEmail?.id === email.id && "bg-isro-blue/10 border-l-4 border-l-isro-blue"
+                )}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <h3 className={cn("font-medium text-sm truncate pr-2", !email.is_read && "font-bold text-gray-900")}>
+                    {email.from_name || email.from_email}
+                  </h3>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatTime(email.sent_at)}</span>
+                </div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className={cn("text-sm truncate text-gray-700", !email.is_read && "font-semibold")}>
+                    {email.subject || '(No subject)'}
+                  </h4>
+                  {email.is_encrypted && (
+                    <ShieldCheck className="h-3 w-3 text-isro-blue shrink-0" />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 line-clamp-2">
+                  {email.body_text.substring(0, 100)}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* --- Reading Pane --- */}
+      <div className="flex-1 flex flex-col bg-white min-w-0">
+        {selectedEmail ? (
+          <>
+            {/* Header */}
+            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-start">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-4">
+                  <h1 className="text-2xl font-bold text-gray-900 truncate">{selectedEmail.subject || '(No subject)'}</h1>
+                  {selectedEmail.is_encrypted && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-isro-blue/10 text-isro-blue border-isro-blue/20">
+                      <ShieldCheck className="h-3 w-3" />
+                      Quantum Secured
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                      {(selectedEmail.from_name || selectedEmail.from_email)[0]?.toUpperCase() || '?'}
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{selectedEmail.from_name || selectedEmail.from_email}</p>
+                      <p className="text-sm text-gray-500">to {selectedEmail.to_emails.join(', ')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <span className="text-sm mr-2">{formatTime(selectedEmail.sent_at)}</span>
+                    <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                      <Star className={cn("h-5 w-5", selectedEmail.is_starred && "fill-yellow-400 text-yellow-400")} />
+                    </button>
+                    <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                      <Reply className="h-5 w-5" />
+                    </button>
+                    <button className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                      <MoreVertical className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-8">
+              <div className="prose max-w-none text-gray-800 whitespace-pre-wrap font-normal leading-relaxed">
+                {selectedEmail.is_encrypted ? (
+                  <EncryptedText 
+                    text={selectedEmail.body_text}
+                    encryptedClassName="text-neutral-500"
+                    revealedClassName="dark:text-white text-black"
+                    revealDelayMs={5}
+                  />
+                ) : (
+                  selectedEmail.body_text
+                )}
+              </div>
+
+              {selectedEmail.is_encrypted && (
+                <div className="mt-12 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-start gap-3">
+                  <ShieldCheck className="h-5 w-5 text-isro-blue mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">Quantum Encrypted Message</h4>
+                    <p className="text-xs text-slate-600 mt-1">
+                      This message was secured using quantum-safe encryption.
+                      (Placeholder - Phase 2 implementation)
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Reply Box */}
+            <div className="p-6 border-t border-gray-100 bg-gray-50">
+              <div 
+                onClick={() => setIsComposeOpen(true)}
+                className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm cursor-pointer hover:border-isro-blue transition-colors"
+              >
+                <p className="text-gray-400 text-sm">Click here to reply...</p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+            <div className="h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+              <Inbox className="h-8 w-8 text-gray-300" />
+            </div>
+            <p>Select an email to read</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SidebarItem({ icon: Icon, label, active, collapsed, onClick, count }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 w-full p-3 rounded-lg transition-all group relative",
+        active
+          ? "bg-slate-800 text-isro-orange font-medium"
+          : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+        collapsed && "justify-center"
+      )}
+    >
+      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-isro-orange" : "group-hover:text-slate-200")} />
+      {!collapsed && (
+        <>
+          <span className="flex-1 text-left">{label}</span>
+          {count !== undefined && count > 0 && (
+            <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+              {count}
+            </span>
+          )}
+        </>
+      )}
+
+      {collapsed && (
+        <div className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50">
+          {label}
+        </div>
+      )}
+    </button>
+  );
+}
