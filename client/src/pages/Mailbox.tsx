@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2, Download } from 'lucide-react';
 import { EncryptedText } from "@/components/ui/encrypted-text";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -20,6 +20,16 @@ interface MailboxProps {
     onBack: () => void;
 }
 
+interface Attachment {
+  id: number;
+  filename: string;
+  content_type: string;
+  size: number;
+  is_encrypted: boolean;
+  security_level: string;
+  created_at: string;
+}
+
 interface Email {
   id: number;
   message_id: string;
@@ -33,6 +43,7 @@ interface Email {
   is_read: boolean;
   is_starred: boolean;
   is_encrypted: boolean;
+  attachments?: Attachment[];
 }
 
 export default function Mailbox({ account, onBack }: MailboxProps) {
@@ -52,11 +63,20 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+  // Check if account is configured for email operations
+  const isAccountConfigured = () => {
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      return false;
+    }
+    return true;
+  };
 
   // Fetch emails on mount
   useEffect(() => {
-    // Skip loading for qutemail account (it's not a real email account)
-    if (account.id === 'qutemail') {
+    // Skip loading for unconfigured qutemail accounts
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
       setLoading(false);
       return;
     }
@@ -64,7 +84,10 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   }, [account.id]);
 
   const loadEmails = async () => {
-    if (account.id === 'qutemail') return;
+    // Skip loading for unconfigured qutemail accounts
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      return;
+    }
     
     try {
       setLoading(true);
@@ -83,8 +106,11 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
 
   const handleSync = async () => {
     if (account.id === 'qutemail') {
-      alert('QuteMail is your internal account. Connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
-      return;
+      // Check if this is a configured QuTeMail account (only aalan@qutemail.tech)
+      if (account.email !== 'aalan@qutemail.tech') {
+        alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+        return;
+      }
     }
     
     try {
@@ -106,6 +132,12 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
       return;
     }
 
+    // Check if QuTeMail account is configured before sending
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+      return;
+    }
+
     try {
       setSending(true);
       await api.sendEmail(
@@ -114,7 +146,8 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
         composeSubject,
         composeBody,
         undefined,
-        encryptionMethod
+        encryptionMethod,
+        selectedFiles.length > 0 ? selectedFiles : undefined
       );
       
       // Close compose and refresh emails
@@ -122,6 +155,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
       setComposeTo('');
       setComposeSubject('');
       setComposeBody('');
+      setSelectedFiles([]);
       await handleSync();
     } catch (err: any) {
       alert(err.message || 'Failed to send email');
@@ -290,19 +324,75 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   className="w-full h-64 p-4 bg-gray-50 rounded-lg border-transparent focus:bg-white focus:ring-2 focus:ring-isro-blue focus:border-transparent resize-none outline-none text-gray-700"
                   placeholder="Write your message here..."
                 ></textarea>
+
+                {/* File Input (Hidden) */}
+                <input
+                  type="file"
+                  id="attachment-input"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setSelectedFiles(Array.from(e.target.files));
+                    }
+                  }}
+                />
+
+                {/* Selected Files Display */}
+                {selectedFiles.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Attachments ({selectedFiles.length}):</p>
+                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                      {selectedFiles.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-100 rounded-lg">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Paperclip className="h-4 w-4 text-gray-500 shrink-0" />
+                            <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                            <span className="text-xs text-gray-500 shrink-0">
+                              ({(file.size / 1024).toFixed(1)} KB)
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const newFiles = selectedFiles.filter((_, i) => i !== index);
+                              setSelectedFiles(newFiles);
+                              // Reset file input
+                              const fileInput = document.getElementById('attachment-input') as HTMLInputElement;
+                              if (fileInput) fileInput.value = '';
+                            }}
+                            className="p-1 hover:bg-gray-200 rounded text-gray-500 transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
               <div className="flex gap-2">
-                <button className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors">
+                <label
+                  htmlFor="attachment-input"
+                  className="p-2 hover:bg-gray-200 rounded-lg text-gray-500 transition-colors cursor-pointer"
+                >
                   <Paperclip className="h-5 w-5" />
-                </button>
+                </label>
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setIsComposeOpen(false)}
+                  onClick={() => {
+                    setIsComposeOpen(false);
+                    setComposeTo('');
+                    setComposeSubject('');
+                    setComposeBody('');
+                    setSelectedFiles([]);
+                    const fileInput = document.getElementById('attachment-input') as HTMLInputElement;
+                    if (fileInput) fileInput.value = '';
+                  }}
                   className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
                   disabled={sending}
                 >
@@ -350,7 +440,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
 
         <div className="px-3 py-4">
           <button
-            onClick={() => setIsComposeOpen(true)}
+            onClick={() => {
+              if (!isAccountConfigured()) {
+                alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+                return;
+              }
+              setIsComposeOpen(true);
+            }}
             className={cn(
               "flex items-center gap-3 w-full bg-isro-orange hover:opacity-90 text-white p-3 rounded-xl transition-all shadow-lg shadow-isro-orange/20 mb-6",
               !sidebarOpen && "justify-center px-0"
@@ -574,6 +670,52 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 )}
               </div>
 
+              {/* Attachments */}
+              {selectedEmail.attachments && selectedEmail.attachments.length > 0 && (
+                <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Attachments ({selectedEmail.attachments.length})</h4>
+                  <div className="space-y-2">
+                    {selectedEmail.attachments.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-isro-blue transition-colors"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <Paperclip className="h-5 w-5 text-gray-500 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{attachment.filename}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-xs text-gray-500">
+                                {(attachment.size / 1024).toFixed(1)} KB
+                              </p>
+                              {attachment.is_encrypted && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-isro-blue/10 text-isro-blue">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  Encrypted
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.downloadAttachment(attachment.id, attachment.filename);
+                            } catch (err: any) {
+                              alert(err.message || 'Failed to download attachment');
+                            }
+                          }}
+                          className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                          title="Download attachment"
+                        >
+                          <Download className="h-5 w-5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {selectedEmail.is_encrypted && (
                 <div className="mt-12 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-start gap-3">
                   <ShieldCheck className="h-5 w-5 text-isro-blue mt-0.5" />
@@ -591,7 +733,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             {/* Reply Box */}
             <div className="p-6 border-t border-gray-100 bg-gray-50">
               <div 
-                onClick={() => setIsComposeOpen(true)}
+                onClick={() => {
+                  if (!isAccountConfigured()) {
+                    alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+                    return;
+                  }
+                  setIsComposeOpen(true);
+                }}
                 className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm cursor-pointer hover:border-isro-blue transition-colors"
               >
                 <p className="text-gray-400 text-sm">Click here to reply...</p>

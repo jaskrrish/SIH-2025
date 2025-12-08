@@ -10,7 +10,7 @@ class UserManager(BaseUserManager):
         if not username:
             raise ValueError('Username is required')
         
-        email = f"{username}@qutemail.com"
+        email = f"{username}@qutemail.tech"
         user = self.model(username=username, email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -27,7 +27,7 @@ class UserManager(BaseUserManager):
 class User(AbstractBaseUser, PermissionsMixin):
     """
     Custom User model for QuteMail
-    - Username becomes the email prefix (username@qutemail.com)
+    - Username becomes the email prefix (username@qutemail.tech)
     - Email is auto-generated from username
     """
     username = models.CharField(max_length=150, unique=True)

@@ -45,12 +45,17 @@ class Email(models.Model):
 
 
 class Attachment(models.Model):
-    """Store email attachments"""
+    """Store email attachments with encryption support"""
     email = models.ForeignKey(Email, on_delete=models.CASCADE, related_name='attachments')
     filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
-    size = models.IntegerField()  # Size in bytes
-    file_data = models.BinaryField()  # Store file content
+    size = models.IntegerField()  # Size in bytes (original size before encryption)
+    file_data = models.BinaryField()  # Store file content (encrypted or plain)
+    
+    # Encryption fields
+    is_encrypted = models.BooleanField(default=False)
+    security_level = models.CharField(max_length=20, blank=True, default='regular')  # 'regular', 'aes', 'qkd', 'qrng_pqc'
+    encryption_metadata = models.JSONField(null=True, blank=True)  # Store key_id, algorithm, etc.
     
     created_at = models.DateTimeField(auto_now_add=True)
     
