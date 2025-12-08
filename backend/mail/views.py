@@ -45,6 +45,8 @@ def sync_emails(request, account_id):
                 security_level = email_data.pop('security_level', 'regular')
                 encryption_metadata = email_data.pop('encryption_metadata', None)
                 
+                print(f"[SYNC] Processing new email: subject={email_data.get('subject', 'N/A')}, attachments_count={len(attachments_data)}")
+                
                 # Create email
                 email_obj = Email.objects.create(
                     user=request.user,
@@ -61,6 +63,14 @@ def sync_emails(request, account_id):
                         # If attachment is encrypted but no metadata, create minimal metadata
                         att_encryption_metadata = {}
                     
+                    # DEBUG: Log attachment data before saving
+                    print(f"[SYNC] Saving attachment: {att_data['filename']}")
+                    print(f"[SYNC]   - is_encrypted: {att_data.get('is_encrypted', False)}")
+                    print(f"[SYNC]   - security_level: {att_data.get('security_level', security_level)}")
+                    print(f"[SYNC]   - size: {att_data.get('size', 0)}")
+                    print(f"[SYNC]   - file_data type: {type(att_data.get('file_data'))}, len: {len(att_data.get('file_data', b''))}")
+                    print(f"[SYNC]   - encryption_metadata: {att_encryption_metadata}")
+                    
                     Attachment.objects.create(
                         email=email_obj,
                         filename=att_data['filename'],
@@ -71,7 +81,7 @@ def sync_emails(request, account_id):
                         security_level=att_data.get('security_level', security_level),
                         encryption_metadata=att_encryption_metadata  # Use attachment's own metadata
                     )
-                    print(f"[SYNC] Saved attachment: {att_data['filename']} with key_id: {att_encryption_metadata.get('key_id') if att_encryption_metadata else 'None'}")
+                    print(f"[SYNC] Saved attachment: {att_data['filename']} - is_encrypted={att_data.get('is_encrypted', False)}, security_level={att_data.get('security_level', security_level)}, key_id={att_encryption_metadata.get('key_id') if att_encryption_metadata else 'None'}")
                 
                 new_count += 1
         
@@ -151,6 +161,10 @@ def send_email(request):
         account_id, to_emails[], subject, body_text, body_html (optional),
         security_level, attachments[] (files)
     """
+    print(f"[SEND] ========== send_email called ==========")
+    print(f"[SEND] Method: {request.method}")
+    print(f"[SEND] User: {request.user}")
+    
     # Handle multipart/form-data (for file uploads)
     import json
     from django.http import QueryDict
@@ -260,9 +274,13 @@ def send_email(request):
                 )
         
         # Process attachments
+        print(f"[SEND] Processing attachments...")
+        print(f"[SEND] request.FILES keys: {list(request.FILES.keys())}")
         encrypted_attachments = []
         if 'attachments' in request.FILES:
+            print(f"[SEND] Found attachments in request.FILES")
             for uploaded_file in request.FILES.getlist('attachments'):
+                print(f"[SEND] Processing file: {uploaded_file.name}, size: {uploaded_file.size}, type: {uploaded_file.content_type}")
                 # Read file as bytes
                 file_bytes = uploaded_file.read()
                 original_size = len(file_bytes)
@@ -293,18 +311,27 @@ def send_email(request):
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR
                         )
                 else:
-                    # Store plain attachment (base64 encode for consistency)
+                    # REGULAR: Store plain attachment (base64 encode for storage consistency only)
+                    print(f"[SEND] Processing REGULAR attachment: {uploaded_file.name} ({original_size} bytes)")
                     encrypted_attachments.append({
                         'filename': uploaded_file.name,
                         'content_type': uploaded_file.content_type or 'application/octet-stream',
                         'size': original_size,
-                        'encrypted_data': base64.b64encode(file_bytes).decode('utf-8'),
+                        'encrypted_data': base64.b64encode(file_bytes).decode('utf-8'),  # Base64 for storage, will decode in SMTP
                         'encrypted_size': original_size,
-                        'metadata': {}
+                        'metadata': {}  # No encryption metadata for regular
                     })
+                    print(f"[SEND] Added regular attachment to list: {uploaded_file.name}")
+        
+        print(f"[SEND] About to send email via SMTP")
+        print(f"[SEND]   - To: {data['to_emails']}")
+        print(f"[SEND]   - Subject: {data['subject']}")
+        print(f"[SEND]   - Security Level: {security_level}")
+        print(f"[SEND]   - Attachments count: {len(encrypted_attachments)}")
         
         smtp_client = SMTPClient(account)
         smtp_client.connect()
+        print(f"[SEND] SMTP connected")
         
         smtp_client.send_email(
             to_emails=data['to_emails'],
@@ -316,9 +343,12 @@ def send_email(request):
             encryption_metadata=encrypted_metadata,
             attachments=encrypted_attachments if encrypted_attachments else None  # Pass encrypted attachments
         )
+        print(f"[SEND] Email sent via SMTP")
         
         smtp_client.disconnect()
+        print(f"[SEND] SMTP disconnected")
         
+        print(f"[SEND] ========== send_email completed successfully ==========")
         return Response({
             'message': 'Email sent successfully',
             'security_level': security_level,
@@ -328,6 +358,10 @@ def send_email(request):
         })
     
     except Exception as e:
+        import traceback
+        print(f"[SEND] ========== ERROR in send_email ==========")
+        print(f"[SEND] Error: {str(e)}")
+        print(f"[SEND] Traceback: {traceback.format_exc()}")
         return Response(
             {'error': f'Failed to send email: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -349,11 +383,21 @@ def download_attachment(request, attachment_id):
         # Get file data
         file_data = bytes(attachment.file_data)
         
+        # DEBUG: Log attachment details
+        print(f"[DOWNLOAD] Attachment details:")
+        print(f"[DOWNLOAD]   - filename: {attachment.filename}")
+        print(f"[DOWNLOAD]   - is_encrypted: {attachment.is_encrypted}")
+        print(f"[DOWNLOAD]   - security_level: {attachment.security_level}")
+        print(f"[DOWNLOAD]   - content_type: {attachment.content_type}")
+        print(f"[DOWNLOAD]   - size: {attachment.size}")
+        print(f"[DOWNLOAD]   - file_data length: {len(file_data)}")
+        print(f"[DOWNLOAD]   - encryption_metadata: {attachment.encryption_metadata}")
+        
         # Check if attachment is already decrypted (is_encrypted=False means it was decrypted during sync)
         # If is_encrypted=True, it means decryption failed during sync and we need to decrypt now
         if not attachment.is_encrypted:
             # Already decrypted during IMAP sync, return as-is
-            print(f"[DOWNLOAD] Attachment {attachment.filename} was already decrypted during sync")
+            print(f"[DOWNLOAD] Attachment {attachment.filename} was already decrypted during sync (regular or successfully decrypted)")
         elif attachment.is_encrypted and attachment.security_level != 'regular':
             try:
                 # Use the email account's email address, not the user's QuteMail email
