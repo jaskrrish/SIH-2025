@@ -13,6 +13,7 @@ class EmailAccount(models.Model):
         ('gmail', 'Gmail'),
         ('outlook', 'Outlook'),
         ('yahoo', 'Yahoo'),
+        ('qutemail', 'QuTeMail'),
         ('custom', 'Custom IMAP/SMTP'),
     ]
     
@@ -77,6 +78,13 @@ class EmailAccount(models.Model):
                 self.smtp_host = 'smtp.office365.com'
                 self.imap_port = 993
                 self.smtp_port = 587
+            elif self.provider == 'qutemail':
+                self.imap_host = 'imappro.zoho.in'
+                self.smtp_host = 'smtppro.zoho.in'
+                self.imap_port = 993
+                self.smtp_port = 587
+                self.imap_use_ssl = True
+                self.smtp_use_tls = True
             elif self.provider == 'yahoo':
                 self.imap_host = 'imap.mail.yahoo.com'
                 self.smtp_host = 'smtp.mail.yahoo.com'
