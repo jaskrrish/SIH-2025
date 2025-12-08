@@ -208,6 +208,17 @@ class EmailCacheService:
                             ciphertext=body_text,
                             key_material=base64.b64decode(aes_key)
                         )
+                    elif security_level == 'qs_otp':
+                        key_id = encryption_metadata.get('key_id')
+                        if not key_id:
+                            raise ValueError('OTP email missing key_id')
+                        # OTP requires positional args: ciphertext (string of bits), key_id, requester_sae
+                        decrypted_bytes = crypto_router.decrypt(
+                            security_level='qs_otp',
+                            ciphertext=body_text,  # String of '0' and '1' characters
+                            key_id=key_id,
+                            requester_sae=account.email
+                        )
                     else:
                         raise ValueError(f'Unknown security level: {security_level}')
                     email_data['body_text'] = decrypted_bytes.decode('utf-8')
@@ -251,6 +262,17 @@ class EmailCacheService:
                                 security_level='aes',
                                 ciphertext=att_data,
                                 key_material=base64.b64decode(aes_key)
+                            )
+                        elif att_security_level == 'qs_otp':
+                            key_id = att_metadata.get('key_id')
+                            if not key_id:
+                                raise ValueError(f"OTP attachment {att.get('filename')} missing key_id")
+                            # OTP requires positional args: ciphertext (string of bits), key_id, requester_sae
+                            decrypted_bytes = crypto_router.decrypt(
+                                security_level='qs_otp',
+                                ciphertext=att_data,  # String of '0' and '1' characters
+                                key_id=key_id,
+                                requester_sae=account.email
                             )
                         else:
                             raise ValueError(f'Unknown security level: {att_security_level}')

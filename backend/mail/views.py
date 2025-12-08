@@ -328,8 +328,19 @@ def send_email(request):
                     requester_sae=account.email,
                     recipient_sae=data['to_emails'][0] if data['to_emails'] else None
                 )
-                email_content = encryption_result['ciphertext']
+                ciphertext = encryption_result['ciphertext']
                 encrypted_metadata = encryption_result['metadata']
+                
+                # Serialize ciphertext based on type
+                if isinstance(ciphertext, list):
+                    # OTP returns list of bits - convert to string for transmission
+                    email_content = ''.join(str(bit) for bit in ciphertext)
+                elif isinstance(ciphertext, bytes):
+                    # AES/QKD return bytes - base64 encode for transmission
+                    email_content = base64.b64encode(ciphertext).decode('utf-8')
+                else:
+                    # Already a string (base64 encoded)
+                    email_content = ciphertext
             except NotImplementedError:
                 return Response(
                     {'error': f'Security level "{security_level}" is not yet implemented'},
@@ -363,12 +374,27 @@ def send_email(request):
                             recipient_sae=data['to_emails'][0] if data['to_emails'] else None
                         )
                         
+                        # Serialize attachment ciphertext based on type
+                        att_ciphertext = attachment_encryption['ciphertext']
+                        if isinstance(att_ciphertext, list):
+                            # OTP returns list of bits - convert to string
+                            serialized_ciphertext = ''.join(str(bit) for bit in att_ciphertext)
+                            encrypted_size = len(serialized_ciphertext)
+                        elif isinstance(att_ciphertext, bytes):
+                            # AES/QKD return bytes - base64 encode
+                            serialized_ciphertext = base64.b64encode(att_ciphertext).decode('utf-8')
+                            encrypted_size = len(att_ciphertext)
+                        else:
+                            # Already a string (base64 encoded)
+                            serialized_ciphertext = att_ciphertext
+                            encrypted_size = len(base64.b64decode(att_ciphertext))
+                        
                         encrypted_attachments.append({
                             'filename': uploaded_file.name,
                             'content_type': uploaded_file.content_type or 'application/octet-stream',
                             'size': original_size,  # Original size
-                            'encrypted_data': attachment_encryption['ciphertext'],
-                            'encrypted_size': len(base64.b64decode(attachment_encryption['ciphertext'])),
+                            'encrypted_data': serialized_ciphertext,
+                            'encrypted_size': encrypted_size,
                             'metadata': attachment_encryption['metadata']
                         })
                         print(f"[SEND] Encrypted attachment: {uploaded_file.name} ({original_size} bytes)")

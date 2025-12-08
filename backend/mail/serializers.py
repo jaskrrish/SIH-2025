@@ -61,7 +61,7 @@ class SendEmailSerializer(serializers.Serializer):
     body_text = serializers.CharField()
     body_html = serializers.CharField(required=False, allow_blank=True)
     security_level = serializers.ChoiceField(
-        choices=['regular', 'aes', 'qkd', 'qrng_pqc'],
+        choices=['regular', 'aes', 'qs_otp', 'qkd', 'qrng_pqc'],
         default='regular'
     )
     # Attachments will be handled via request.FILES, not in serializer

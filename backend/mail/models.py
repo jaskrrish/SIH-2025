@@ -74,7 +74,7 @@ class Attachment(models.Model):
     
     # Encryption fields
     is_encrypted = models.BooleanField(default=False)
-    security_level = models.CharField(max_length=20, blank=True, default='regular')  # 'regular', 'aes', 'qkd', 'qrng_pqc'
+    security_level = models.CharField(max_length=20, blank=True, default='regular')  # 'regular', 'aes', 'qs_otp', 'qkd', 'qrng_pqc'
     encryption_metadata = models.JSONField(null=True, blank=True)  # Store key_id, algorithm, etc.
     
     created_at = models.DateTimeField(auto_now_add=True)
