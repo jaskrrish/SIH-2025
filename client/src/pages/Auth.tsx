@@ -190,7 +190,7 @@ export default function Auth({ onLogin }: AuthProps) {
                             <p className="text-sm text-muted-foreground text-center">
                                 {mode === 'login'
                                     ? 'Sign in to your quantum-secure mailbox'
-                                    : 'Get your own @qutemail.com address with quantum encryption'}
+                                    : 'Get your own @qutemail.tech address with quantum encryption'}
                             </p>
                         </CardHeader>
 
@@ -214,13 +214,13 @@ export default function Auth({ onLogin }: AuthProps) {
                                             required
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                                            @qutemail.com
+                                            @qutemail.tech
                                         </span>
                                     </div>
                                     {mode === 'signup' && (
                                         <p className="text-xs text-muted-foreground">
                                             Your email will be: <span className="font-semibold text-foreground">
-                                                {formData.username || 'username'}@qutemail.com
+                                                {formData.username || 'username'}@qutemail.tech
                                             </span>
                                         </p>
                                     )}

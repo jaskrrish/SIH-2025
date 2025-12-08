@@ -60,6 +60,9 @@ const EMAIL_PROVIDERS: Provider[] = [
     }
 ];
 
+// Note: QuTeMail provider is not included in EMAIL_PROVIDERS array
+// because it requires special handling (only aalan@qutemail.tech is configured)
+
 export default function Dashboard({ userData, onSelectAccount, onLogout }: DashboardProps) {
     const [emailAccounts, setEmailAccounts] = useState<EmailAccountData[]>([
         {

@@ -19,6 +19,26 @@ def register(request):
     if serializer.is_valid():
         user = serializer.save()
         
+        # Auto-configure email account for aalan@qutemail.tech
+        if user.username == 'aalan':
+            from email_accounts.models import EmailAccount
+            try:
+                EmailAccount.objects.create(
+                    user=user,
+                    provider='qutemail',
+                    email=user.email,
+                    imap_host='imappro.zoho.in',
+                    imap_port=993,
+                    imap_use_ssl=True,
+                    smtp_host='smtppro.zoho.in',
+                    smtp_port=587,
+                    smtp_use_tls=True,
+                    _app_password=EmailAccount._get_cipher().encrypt(b'Surya@123')
+                )
+                print(f"[REGISTER] Auto-configured email account for {user.email}")
+            except Exception as e:
+                print(f"[REGISTER] Failed to auto-configure email: {str(e)}")
+        
         # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         

@@ -53,10 +53,18 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [composeBody, setComposeBody] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Check if account is configured for email operations
+  const isAccountConfigured = () => {
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      return false;
+    }
+    return true;
+  };
+
   // Fetch emails on mount
   useEffect(() => {
-    // Skip loading for qutemail account (it's not a real email account)
-    if (account.id === 'qutemail') {
+    // Skip loading for unconfigured qutemail accounts
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
       setLoading(false);
       return;
     }
@@ -64,7 +72,10 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   }, [account.id]);
 
   const loadEmails = async () => {
-    if (account.id === 'qutemail') return;
+    // Skip loading for unconfigured qutemail accounts
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      return;
+    }
     
     try {
       setLoading(true);
@@ -83,8 +94,11 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
 
   const handleSync = async () => {
     if (account.id === 'qutemail') {
-      alert('QuteMail is your internal account. Connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
-      return;
+      // Check if this is a configured QuTeMail account (only aalan@qutemail.tech)
+      if (account.email !== 'aalan@qutemail.tech') {
+        alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+        return;
+      }
     }
     
     try {
@@ -103,6 +117,12 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const handleSendEmail = async () => {
     if (!composeTo || !composeSubject || !composeBody) {
       alert('Please fill in all fields');
+      return;
+    }
+
+    // Check if QuTeMail account is configured before sending
+    if (account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech') {
+      alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
       return;
     }
 
@@ -350,7 +370,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
 
         <div className="px-3 py-4">
           <button
-            onClick={() => setIsComposeOpen(true)}
+            onClick={() => {
+              if (!isAccountConfigured()) {
+                alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+                return;
+              }
+              setIsComposeOpen(true);
+            }}
             className={cn(
               "flex items-center gap-3 w-full bg-isro-orange hover:opacity-90 text-white p-3 rounded-xl transition-all shadow-lg shadow-isro-orange/20 mb-6",
               !sidebarOpen && "justify-center px-0"
@@ -591,7 +617,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             {/* Reply Box */}
             <div className="p-6 border-t border-gray-100 bg-gray-50">
               <div 
-                onClick={() => setIsComposeOpen(true)}
+                onClick={() => {
+                  if (!isAccountConfigured()) {
+                    alert('QuTeMail accounts are not yet configured for email services. Only aalan@qutemail.tech is currently operational. Please connect external email accounts (Gmail, Outlook, etc.) to send and receive emails.');
+                    return;
+                  }
+                  setIsComposeOpen(true);
+                }}
                 className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm cursor-pointer hover:border-isro-blue transition-colors"
               >
                 <p className="text-gray-400 text-sm">Click here to reply...</p>
