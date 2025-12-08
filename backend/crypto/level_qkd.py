@@ -82,11 +82,12 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
         ValueError: If key not found, expired, unauthorized, or authentication fails
     """
     # Retrieve key from Key Manager (with authorization check)
+    # Don't mark as consumed yet - only mark after successful decryption
     try:
         key_response = km_client.get_key_by_id(
             key_id=key_id,
             requester_sae=requester_sae,
-            mark_consumed=mark_consumed
+            mark_consumed=False  # Get key first without consuming
         )
     except ValueError as e:
         raise ValueError(f"Key retrieval failed: {str(e)}")
@@ -105,6 +106,16 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
             key_material=key_material,
             associated_data=associated_data
         )
+        
+        # Only mark key as consumed AFTER successful decryption
+        if mark_consumed:
+            km_client.get_key_by_id(
+                key_id=key_id,
+                requester_sae=requester_sae,
+                mark_consumed=True  # Now mark as consumed
+            )
+        
         return plaintext
     except ValueError as e:
+        # Decryption failed - don't mark key as consumed so it can be retried
         raise ValueError(f"Decryption failed: {str(e)}")

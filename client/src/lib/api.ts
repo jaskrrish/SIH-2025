@@ -31,6 +31,11 @@ export const API_ENDPOINTS = {
         STATUS: `${API_BASE_URL}/km/status/`,
         GET_KEY: `${API_BASE_URL}/km/get_key/`,
         GET_KEY_WITH_ID: `${API_BASE_URL}/km/get_key_with_id/`,
+    },
+    
+    // Attachment endpoints
+    ATTACHMENTS: {
+        DOWNLOAD: (id: number) => `${API_BASE_URL}/mail/attachments/${id}`,
     }
 };
 
@@ -150,29 +155,123 @@ export const api = {
         return response.json();
     },
     
-    async sendEmail(accountId: number, toEmails: string[], subject: string, bodyText: string, bodyHtml?: string, securityLevel: 'regular' | 'aes' | 'qkd' | 'qrng_pqc' = 'regular') {
+    async sendEmail(accountId: number, toEmails: string[], subject: string, bodyText: string, bodyHtml?: string, securityLevel: 'regular' | 'aes' | 'qkd' | 'qrng_pqc' = 'regular', attachments?: File[]) {
+        // Use FormData for file uploads
+        const formData = new FormData();
+        formData.append('account_id', accountId.toString());
+        formData.append('to_emails', JSON.stringify(toEmails));
+        formData.append('subject', subject);
+        formData.append('body_text', bodyText);
+        if (bodyHtml) {
+            formData.append('body_html', bodyHtml);
+        }
+        formData.append('security_level', securityLevel);
+        
+        // Add attachments if provided
+        if (attachments && attachments.length > 0) {
+            attachments.forEach(file => {
+                formData.append('attachments', file);
+            });
+        }
+        
+        // Get auth headers but exclude Content-Type for FormData (browser will set it with boundary)
+        const authHeaders: HeadersInit = {};
+        const token = authUtils.getToken();
+        if (token) {
+            authHeaders['Authorization'] = `Bearer ${token}`;
+        }
+        
         const response = await fetch(API_ENDPOINTS.MAIL.SEND, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...authUtils.getAuthHeaders()
-            },
-            body: JSON.stringify({
-                account_id: accountId,
-                to_emails: toEmails,
-                subject,
-                body_text: bodyText,
-                body_html: bodyHtml,
-                security_level: securityLevel
-            })
+            headers: authHeaders, // Don't set Content-Type - browser will set it with boundary for multipart/form-data
+            body: formData
+        });
+        
+        if (!response.ok) {
+            let errorMessage = 'Failed to send email';
+            try {
+                const error = await response.json();
+                // Handle DRF validation errors
+                if (error.to_emails) {
+                    errorMessage = `Validation error: ${JSON.stringify(error.to_emails)}`;
+                } else if (error.account_id) {
+                    errorMessage = `Validation error: ${JSON.stringify(error.account_id)}`;
+                } else if (error.subject) {
+                    errorMessage = `Validation error: ${JSON.stringify(error.subject)}`;
+                } else if (error.body_text) {
+                    errorMessage = `Validation error: ${JSON.stringify(error.body_text)}`;
+                } else if (error.security_level) {
+                    errorMessage = `Validation error: ${JSON.stringify(error.security_level)}`;
+                } else if (error.error) {
+                    errorMessage = error.error;
+                } else if (typeof error === 'string') {
+                    errorMessage = error;
+                } else {
+                    errorMessage = JSON.stringify(error);
+                }
+            } catch (e) {
+                errorMessage = `Server error: ${response.status} ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+        }
+        
+        return response.json();
+    },
+    
+    // Attachments
+    async downloadAttachment(attachmentId: number, filename?: string) {
+        const response = await fetch(API_ENDPOINTS.ATTACHMENTS.DOWNLOAD(attachmentId), {
+            headers: authUtils.getAuthHeaders()
         });
         
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error || 'Failed to send email');
+            throw new Error(error.error || 'Failed to download attachment');
         }
         
-        return response.json();
+        // Use provided filename, or extract from Content-Disposition header
+        let downloadFilename = filename || 'attachment';
+        if (!filename) {
+            const contentDisposition = response.headers.get('Content-Disposition');
+            if (contentDisposition) {
+                // Try to get filename from filename* (UTF-8 encoded) first - this is the standard way
+                const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+                if (filenameStarMatch) {
+                    try {
+                        downloadFilename = decodeURIComponent(filenameStarMatch[1]);
+                    } catch (e) {
+                        // If decoding fails, try regular filename
+                        const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+                        if (filenameMatch) {
+                            downloadFilename = filenameMatch[1];
+                        }
+                    }
+                } else {
+                    // Fallback to regular filename (with quotes)
+                    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+                    if (filenameMatch) {
+                        downloadFilename = filenameMatch[1];
+                    } else {
+                        // Try without quotes
+                        const filenameMatchNoQuotes = contentDisposition.match(/filename=([^;]+)/);
+                        if (filenameMatchNoQuotes) {
+                            downloadFilename = filenameMatchNoQuotes[1].trim();
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Create blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadFilename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
     }
 };
 
