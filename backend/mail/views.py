@@ -5,18 +5,25 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.http import HttpResponse
 from email_accounts.models import EmailAccount
-from .models import Email, Attachment
+from .models import EmailMetadata, Attachment
 from .serializers import EmailSerializer, SendEmailSerializer
 from .imap_client import IMAPClient
 from .smtp_client import SMTPClient
+from .cache_service import EmailCacheService
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def sync_emails(request, account_id):
     """
-    Sync/fetch emails from external provider via IMAP
+    Smart email sync with intelligent caching
     GET /api/mail/sync/{account_id}
+    
+    Logic:
+    - If last_synced > 1 hour ago → Fetch last 20 emails
+    - If last_synced < 1 hour → Fetch last 5 emails  
+    - If never synced → Fetch last 20 emails
+    - Emails cached in Redis (2hr TTL), only metadata in DB
     """
     try:
         account = EmailAccount.objects.get(id=account_id, user=request.user)
@@ -24,75 +31,18 @@ def sync_emails(request, account_id):
         return Response({'error': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
     
     try:
-        # Connect to IMAP and fetch emails
-        print(f"Syncing emails for account: {account.email} (ID: {account.id})")
-        imap_client = IMAPClient(account)
-        imap_client.connect()
-        
-        fetched_emails = imap_client.fetch_emails(limit=20)
-        print(f"Fetched {len(fetched_emails)} emails from IMAP")
-        imap_client.disconnect()
-        
-        # Save to database
-        new_count = 0
-        from .models import Attachment
-        
-        for email_data in fetched_emails:
-            # Check if email already exists
-            if not Email.objects.filter(message_id=email_data['message_id']).exists():
-                # Extract attachments before creating email
-                attachments_data = email_data.pop('attachments', [])
-                security_level = email_data.pop('security_level', 'regular')
-                encryption_metadata = email_data.pop('encryption_metadata', None)
-                
-                print(f"[SYNC] Processing new email: subject={email_data.get('subject', 'N/A')}, attachments_count={len(attachments_data)}")
-                
-                # Create email
-                email_obj = Email.objects.create(
-                    user=request.user,
-                    account=account,
-                    **email_data
-                )
-                
-                # Save attachments
-                for att_data in attachments_data:
-                    # Use attachment's own encryption_metadata (with its own key_id)
-                    # Don't fall back to email body's metadata as they have different keys
-                    att_encryption_metadata = att_data.get('encryption_metadata')
-                    if att_encryption_metadata is None and att_data.get('is_encrypted', False):
-                        # If attachment is encrypted but no metadata, create minimal metadata
-                        att_encryption_metadata = {}
-                    
-                    # DEBUG: Log attachment data before saving
-                    print(f"[SYNC] Saving attachment: {att_data['filename']}")
-                    print(f"[SYNC]   - is_encrypted: {att_data.get('is_encrypted', False)}")
-                    print(f"[SYNC]   - security_level: {att_data.get('security_level', security_level)}")
-                    print(f"[SYNC]   - size: {att_data.get('size', 0)}")
-                    print(f"[SYNC]   - file_data type: {type(att_data.get('file_data'))}, len: {len(att_data.get('file_data', b''))}")
-                    print(f"[SYNC]   - encryption_metadata: {att_encryption_metadata}")
-                    
-                    Attachment.objects.create(
-                        email=email_obj,
-                        filename=att_data['filename'],
-                        content_type=att_data['content_type'],
-                        size=att_data['size'],
-                        file_data=att_data['file_data'],
-                        is_encrypted=att_data.get('is_encrypted', False),
-                        security_level=att_data.get('security_level', security_level),
-                        encryption_metadata=att_encryption_metadata  # Use attachment's own metadata
-                    )
-                    print(f"[SYNC] Saved attachment: {att_data['filename']} - is_encrypted={att_data.get('is_encrypted', False)}, security_level={att_data.get('security_level', security_level)}, key_id={att_encryption_metadata.get('key_id') if att_encryption_metadata else 'None'}")
-                
-                new_count += 1
-        
-        # Update last_synced
-        account.last_synced = timezone.now()
-        account.save()
+        # Use smart cache service
+        print(f"[SYNC] Smart sync for account: {account.email} (ID: {account.id})")
+        sync_result = EmailCacheService.sync_emails_smart(request.user, account)
         
         return Response({
-            'message': f'Synced successfully. {new_count} new emails fetched.',
-            'new_emails': new_count,
-            'last_synced': account.last_synced
+            'message': f'Synced successfully. Fetched {sync_result["fetched"]} emails, cached {sync_result["cached"]}.',
+            'fetched': sync_result['fetched'],
+            'cached': sync_result['cached'],
+            'new_metadata': sync_result.get('new_metadata', 0),
+            'fetch_limit': sync_result['limit'],
+            'last_synced': sync_result['last_synced'],
+            'strategy': f'Fetched last {sync_result["limit"]} emails (smart caching)'
         })
     
     except Exception as e:
@@ -110,44 +60,162 @@ def sync_emails(request, account_id):
 @permission_classes([IsAuthenticated])
 def list_emails(request):
     """
-    List emails for current user
+    List emails metadata (fast, DB-only query)
     GET /api/mail/
     Query params:
         - account_id (optional): Filter by account
         - limit (optional): Number of emails (default 50)
+    
+    Returns only metadata - full content fetched on-demand when opening email
     """
     account_id = request.query_params.get('account_id')
     limit = int(request.query_params.get('limit', 50))
     
-    emails = Email.objects.filter(user=request.user)
+    # Query only metadata (fast!)
+    emails = EmailMetadata.objects.filter(user=request.user)
     
     if account_id:
         emails = emails.filter(account_id=account_id)
     
     emails = emails[:limit]
     
-    serializer = EmailSerializer(emails, many=True)
-    return Response(serializer.data)
+    # Return lightweight metadata
+    email_list = [{
+        'id': email.id,
+        'message_id': email.message_id,
+        'subject': email.subject,
+        'from_email': email.from_email,
+        'from_name': email.from_name,
+        'is_read': email.is_read,
+        'is_starred': email.is_starred,
+        'is_encrypted': email.is_encrypted,
+        'has_attachments': email.has_attachments,
+        'sent_at': email.sent_at,
+        'cached_at': email.cached_at,
+    } for email in emails]
+    
+    return Response(email_list)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_email(request, email_id):
     """
-    Get single email details
+    Get full email content (on-demand fetch from cache/IMAP)
     GET /api/mail/{email_id}
+    
+    Logic:
+    1. Get metadata from DB
+    2. Check Redis cache for full content
+    3. If not cached, fetch from IMAP directly
+    4. Cache result and return
     """
     try:
-        email = Email.objects.get(id=email_id, user=request.user)
+        # Get metadata first (fast DB query)
+        metadata = EmailMetadata.objects.get(id=email_id, user=request.user)
+        
+        # Try to get full content from cache
+        email_content = EmailCacheService.get_email_content(metadata.message_id)
+        
+        if not email_content:
+            # Not in cache - fetch on-demand from IMAP
+            print(f"[GET_EMAIL] Cache miss for {metadata.message_id}, fetching from IMAP...")
+            email_content = EmailCacheService.get_email_on_demand(
+                request.user,
+                metadata.account,
+                metadata.message_id
+            )
+            
+            if not email_content:
+                print(f"[GET_EMAIL] ❌ Failed to fetch email content for {metadata.message_id}")
+                return Response(
+                    {'error': 'Failed to fetch email content'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            print(f"[GET_EMAIL] ✅ Cache hit for {metadata.message_id}")
+        
+        # Debug: Print what we got
+        print(f"[GET_EMAIL] Email content keys: {list(email_content.keys())}")
+        print(f"[GET_EMAIL] body_text length: {len(email_content.get('body_text', ''))}")
+        print(f"[GET_EMAIL] to_emails: {email_content.get('to_emails')}")
+        print(f"[GET_EMAIL] attachments count: {len(email_content.get('attachments', []))}")
         
         # Mark as read
-        if not email.is_read:
-            email.is_read = True
-            email.save()
+        if not metadata.is_read:
+            metadata.is_read = True
+            metadata.save()
         
-        serializer = EmailSerializer(email)
-        return Response(serializer.data)
-    except Email.DoesNotExist:
+        # Email is already decrypted during sync - just get the content
+        body_text = email_content.get('body_text', '')
+        body_html = email_content.get('body_html', '')
+        security_level = email_content.get('security_level', 'regular')
+        
+        # Process attachments for API response
+        import base64
+        attachments = email_content.get('attachments', [])
+        processed_attachments = []
+        
+        for att in attachments:
+            # Get attachment data - could be in 'data', 'file_data', or bytes
+            att_data = att.get('data') or att.get('file_data')
+            
+            # Ensure data is base64 string
+            if isinstance(att_data, bytes):
+                att_data = base64.b64encode(att_data).decode('utf-8')
+            elif not isinstance(att_data, str):
+                att_data = ''
+            
+            processed_attachments.append({
+                'filename': att.get('filename', 'unknown'),
+                'content_type': att.get('content_type', 'application/octet-stream'),
+                'size': att.get('size', 0),
+                'data': att_data,
+                'is_encrypted': att.get('is_encrypted', False),
+                'security_level': att.get('security_level', 'regular')
+            })
+        
+        # Parse to_emails and cc_emails (might be JSON strings from IMAP)
+        import json
+        to_emails = email_content.get('to_emails', [])
+        cc_emails = email_content.get('cc_emails', [])
+        
+        # Convert JSON strings to arrays if needed
+        if isinstance(to_emails, str):
+            try:
+                to_emails = json.loads(to_emails)
+            except:
+                to_emails = [to_emails] if to_emails else []
+        
+        if isinstance(cc_emails, str):
+            try:
+                cc_emails = json.loads(cc_emails)
+            except:
+                cc_emails = [cc_emails] if cc_emails else []
+        
+        # Combine metadata + content
+        response_data = {
+            'id': metadata.id,
+            'message_id': metadata.message_id,
+            'subject': email_content.get('subject', metadata.subject),
+            'from_email': metadata.from_email,
+            'from_name': metadata.from_name,
+            'to_emails': to_emails,  # Parsed array
+            'cc_emails': cc_emails,  # Parsed array
+            'body_text': body_text,  # Already decrypted during sync
+            'body_html': body_html,
+            'attachments': processed_attachments,  # Already decrypted during sync
+            'is_read': metadata.is_read,
+            'is_starred': metadata.is_starred,
+            'is_encrypted': metadata.is_encrypted,
+            'sent_at': metadata.sent_at,
+            'security_level': security_level,
+            'encryption_metadata': email_content.get('encryption_metadata'),
+        }
+        
+        return Response(response_data)
+        
+    except EmailMetadata.DoesNotExist:
         return Response({'error': 'Email not found'}, status=status.HTTP_404_NOT_FOUND)
 
 

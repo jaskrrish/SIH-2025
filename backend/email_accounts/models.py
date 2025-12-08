@@ -37,6 +37,8 @@ class EmailAccount(models.Model):
     # Status
     is_active = models.BooleanField(default=True)
     last_synced = models.DateTimeField(null=True, blank=True)
+    sync_count = models.IntegerField(default=0)  # Track number of syncs
+    total_emails_cached = models.IntegerField(default=0)  # Total emails in cache
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

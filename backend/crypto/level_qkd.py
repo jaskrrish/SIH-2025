@@ -1,11 +1,11 @@
 """
 QKD + AES security level
-Obtains key via BB84 simulator (KM), then uses AES-256-GCM for encryption
+Obtains key via BB84 simulator (KM REST API), then uses AES-256-GCM for encryption
 """
 import base64
 from typing import Optional
 from . import level_aes
-from km import client as km_client
+from .km_client import km_client
 
 
 def encrypt(plaintext: bytes, requester_sae: str, recipient_sae: str,
@@ -32,11 +32,12 @@ def encrypt(plaintext: bytes, requester_sae: str, recipient_sae: str,
             }
         }
     """
-    # Request QKD key from Key Manager
-    key_response = km_client.generate_key(
+    # Request QKD key from Key Manager REST API
+    key_response = km_client.request_key(
         requester_sae=requester_sae,
         recipient_sae=recipient_sae,
-        key_size=key_size
+        key_size=key_size,
+        ttl=3600
     )
     
     # Decode key material
@@ -58,7 +59,7 @@ def encrypt(plaintext: bytes, requester_sae: str, recipient_sae: str,
     result['metadata']['algorithm'] = 'QKD+AES-256-GCM'
     result['metadata']['key_id'] = key_response['key_id']
     result['metadata']['qkd_algorithm'] = key_response['algorithm']
-    result['metadata']['expiry'] = key_response['expiry']
+    result['metadata']['expires_at'] = key_response['expires_at']
     
     return result
 
@@ -81,15 +82,13 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
     Raises:
         ValueError: If key not found, expired, unauthorized, or authentication fails
     """
-    # Retrieve key from Key Manager (with authorization check)
-    # Don't mark as consumed yet - only mark after successful decryption
+    # Retrieve key from Key Manager REST API (with authorization check)
     try:
         key_response = km_client.get_key_by_id(
             key_id=key_id,
-            requester_sae=requester_sae,
-            mark_consumed=False  # Get key first without consuming
+            requester_sae=requester_sae
         )
-    except ValueError as e:
+    except Exception as e:
         raise ValueError(f"Key retrieval failed: {str(e)}")
     
     # Decode key material
@@ -107,15 +106,14 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
             associated_data=associated_data
         )
         
-        # Only mark key as consumed AFTER successful decryption
+        # Mark key as consumed AFTER successful decryption
         if mark_consumed:
-            km_client.get_key_by_id(
+            km_client.consume_key(
                 key_id=key_id,
-                requester_sae=requester_sae,
-                mark_consumed=True  # Now mark as consumed
+                requester_sae=requester_sae
             )
         
         return plaintext
-    except ValueError as e:
-        # Decryption failed - don't mark key as consumed so it can be retried
+    except Exception as e:
+        # Decryption failed - key not marked as consumed, can be retried
         raise ValueError(f"Decryption failed: {str(e)}")

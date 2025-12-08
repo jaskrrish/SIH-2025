@@ -21,13 +21,12 @@ interface MailboxProps {
 }
 
 interface Attachment {
-  id: number;
   filename: string;
   content_type: string;
   size: number;
+  data: string;  // Base64 encoded attachment data
   is_encrypted: boolean;
   security_level: string;
-  created_at: string;
 }
 
 interface Email {
@@ -101,6 +100,26 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
       setError(err.message || 'Failed to load emails');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEmailClick = async (email: Email) => {
+    // If email already has body content, just select it
+    if (email.body_text) {
+      setSelectedEmail(email);
+      return;
+    }
+    
+    // Otherwise, fetch full email content from API
+    try {
+      const fullEmail = await api.getEmail(email.id);
+      setSelectedEmail(fullEmail);
+      
+      // Update the email in the list with full content
+      setEmails(prev => prev.map(e => e.id === fullEmail.id ? fullEmail : e));
+    } catch (err: any) {
+      console.error('Failed to fetch email:', err);
+      setError('Failed to load email content');
     }
   };
 
@@ -584,7 +603,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             filteredEmails.map(email => (
               <div
                 key={email.id}
-                onClick={() => setSelectedEmail(email)}
+                onClick={() => handleEmailClick(email)}
                 className={cn(
                   "p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors",
                   selectedEmail?.id === email.id && "bg-isro-blue/10 border-l-4 border-l-isro-blue"
@@ -605,7 +624,9 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   )}
                 </div>
                 <p className="text-xs text-gray-500 line-clamp-2">
-                  {email.body_text.substring(0, 100)}
+                  {email.is_encrypted 
+                    ? "🔒 Encrypted message - click to decrypt and view" 
+                    : (email.body_text?.substring(0, 100) || "(No preview available)")}
                 </p>
               </div>
             ))
@@ -636,7 +657,18 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{selectedEmail.from_name || selectedEmail.from_email}</p>
-                      <p className="text-sm text-gray-500">to {selectedEmail.to_emails.join(', ')}</p>
+                      <p className="text-sm text-gray-500">
+                        to {(() => {
+                          const emails = selectedEmail.to_emails;
+                          if (!emails) return 'Unknown';
+                          if (Array.isArray(emails)) return emails.join(', ');
+                          try {
+                            return typeof emails === 'string' ? JSON.parse(emails).join(', ') : 'Unknown';
+                          } catch {
+                            return emails;
+                          }
+                        })()}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
@@ -663,7 +695,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     text={selectedEmail.body_text}
                     encryptedClassName="text-neutral-500"
                     revealedClassName="dark:text-white text-black"
-                    revealDelayMs={5}
+                    revealDelayMs={50}
                   />
                 ) : (
                   selectedEmail.body_text
@@ -675,9 +707,9 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <h4 className="text-sm font-semibold text-gray-900 mb-3">Attachments ({selectedEmail.attachments.length})</h4>
                   <div className="space-y-2">
-                    {selectedEmail.attachments.map((attachment) => (
+                    {selectedEmail.attachments.map((attachment, index) => (
                       <div
-                        key={attachment.id}
+                        key={`${attachment.filename}-${index}`}
                         className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-isro-blue transition-colors"
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -698,10 +730,34 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                           </div>
                         </div>
                         <button
-                          onClick={async () => {
+                          onClick={() => {
                             try {
-                              await api.downloadAttachment(attachment.id, attachment.filename);
+                              // Attachment data is already embedded as base64
+                              if (!attachment.data) {
+                                alert('Attachment data not available');
+                                return;
+                              }
+                              
+                              // Convert base64 to blob and download
+                              const byteCharacters = atob(attachment.data);
+                              const byteNumbers = new Array(byteCharacters.length);
+                              for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                              }
+                              const byteArray = new Uint8Array(byteNumbers);
+                              const blob = new Blob([byteArray], { type: attachment.content_type });
+                              
+                              // Create download link
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = attachment.filename;
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              document.body.removeChild(a);
                             } catch (err: any) {
+                              console.error('Download error:', err);
                               alert(err.message || 'Failed to download attachment');
                             }
                           }}

@@ -1,7 +1,8 @@
 """
-BB84 QKD Protocol Simulator for Development
-Simulates quantum key distribution for testing purposes
+QKD Orchestrator - Manages quantum key generation and distribution
+Wraps BB84 simulator and coordinates key distribution between KM instances
 """
+import os
 import secrets
 import hashlib
 from typing import Tuple, List, TYPE_CHECKING
@@ -129,7 +130,7 @@ def reconcile_via_bisection(alice: List[int], bob: List[int], block_size: int = 
 
 
 class BB84Simulator:
-    """Simple BB84 protocol simulator for development/testing"""
+    """BB84 protocol simulator using Amazon Braket for quantum key generation"""
     
     def __init__(self, error_rate: float = 0.0):
         """
@@ -144,14 +145,14 @@ class BB84Simulator:
     def generate_key_pair(self, key_size: int = 256, bitflip_prob: float = 0.0) -> Tuple[QKDKey, QKDKey]:
         """
         Simulate BB84 key generation for two parties (Alice and Bob) using
-        Braket for small circuits and an analytic fallback for large ones.
+        Amazon Braket for small circuits and an analytic fallback for large ones.
 
         Args:
             key_size: Desired key size in bits.
             bitflip_prob: Channel bit-flip probability (overrides error_rate when > 0).
 
         Returns:
-            Tuple of (alice_key, bob_key)
+            Tuple of (alice_key, bob_key) with matching key_material
         """
         key_size_bits = key_size
         effective_bitflip = bitflip_prob if bitflip_prob > 0.0 else self.error_rate
@@ -208,27 +209,13 @@ class BB84Simulator:
         )
         bob_key = QKDKey(
             key_id=key_id,
-            key_material=key_bytes,
+            key_material=key_bytes,  # Same key material after reconciliation
             key_size=key_size_bits
         )
 
         self.key_store[key_id] = key_bytes
 
         return alice_key, bob_key
-    
-    def get_key(self, key_id: str) -> bytes:
-        """
-        Retrieve a key from the key store
-        
-        Args:
-            key_id: Key identifier
-            
-        Returns:
-            Key material as bytes
-        """
-        if key_id not in self.key_store:
-            raise ValueError(f"Key {key_id} not found")
-        return self.key_store[key_id]
     
     @staticmethod
     def _bits_to_bytes(bits: List[int]) -> bytes:
@@ -241,3 +228,60 @@ class BB84Simulator:
                     byte |= bits[i + j] << (7 - j)
             byte_array.append(byte)
         return bytes(byte_array)
+
+
+class QKDOrchestrator:
+    """
+    Orchestrates QKD sessions and key distribution
+    Manages BB84 simulator and coordinates key generation
+    """
+    
+    def __init__(self, error_rate: float = None):
+        """Initialize orchestrator with BB84 simulator"""
+        if error_rate is None:
+            error_rate = float(os.getenv('QKD_ERROR_RATE', '0.0'))
+        
+        self.simulator = BB84Simulator(error_rate=error_rate)
+        self.session_count = 0
+    
+    def orchestrate_key_generation(self, requester_sae: str, recipient_sae: str, 
+                                   key_size: int = None) -> Tuple[QKDKey, QKDKey]:
+        """
+        Orchestrate a QKD session between two SAEs
+        
+        Args:
+            requester_sae: Alice (sender) SAE identity
+            recipient_sae: Bob (receiver) SAE identity
+            key_size: Key size in bits (default from env)
+        
+        Returns:
+            Tuple of (alice_key_obj, bob_key_obj)
+        """
+        if key_size is None:
+            key_size = int(os.getenv('QKD_KEY_SIZE', '256'))
+        
+        self.session_count += 1
+        
+        print(f"[QKD-Orchestrator] Session #{self.session_count}: {requester_sae} → {recipient_sae}")
+        print(f"[QKD-Orchestrator] Generating {key_size}-bit key pair using BB84...")
+        
+        # Run BB84 simulator
+        alice_key, bob_key = self.simulator.generate_key_pair(key_size=key_size)
+        
+        print(f"[QKD-Orchestrator] ✅ Key pair generated: {alice_key.key_id[:16]}...")
+        print(f"[QKD-Orchestrator]    Alice key: {len(alice_key.key_material)} bytes")
+        print(f"[QKD-Orchestrator]    Bob key: {len(bob_key.key_material)} bytes")
+        
+        # Verify keys match (sanity check)
+        assert alice_key.key_material == bob_key.key_material, "Key mismatch in BB84!"
+        assert alice_key.key_id == bob_key.key_id, "Key ID mismatch!"
+        
+        return alice_key, bob_key
+    
+    def get_stats(self) -> dict:
+        """Get orchestrator statistics"""
+        return {
+            'total_sessions': self.session_count,
+            'error_rate': self.simulator.error_rate,
+            'keys_in_store': len(self.simulator.key_store)
+        }

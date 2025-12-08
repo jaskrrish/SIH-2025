@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -134,6 +135,47 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = True  # For dev only - restrict in production
 CORS_ALLOW_CREDENTIALS = True
 
+# Redis Cache Configuration for Email Caching
+# Default to in-memory cache (safe fallback)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'default-cache',
+    }
+}
+
+# Try to use Redis if server is available
+USE_REDIS = os.getenv('USE_REDIS', 'false').lower() == 'true'
+if USE_REDIS:
+    try:
+        import redis
+        # Test Redis connection before switching to Redis cache
+        redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+        test_client = redis.Redis.from_url(redis_url, socket_connect_timeout=2)
+        test_client.ping()
+        test_client.close()
+        
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': redis_url,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                    'SOCKET_CONNECT_TIMEOUT': 5,
+                    'SOCKET_TIMEOUT': 5,
+                    'CONNECTION_POOL_KWARGS': {
+                        'max_connections': 50,
+                        'retry_on_timeout': True,
+                    },
+                }
+            }
+        }
+        print("[CACHE] ✅ Redis server connected - using Redis for email caching")
+    except (ImportError, redis.exceptions.ConnectionError, Exception) as e:
+        print(f"[CACHE] ⚠️  Redis not available ({type(e).__name__}), using in-memory cache")
+else:
+    print("[CACHE] Using in-memory cache (set USE_REDIS=true to enable Redis)")
+
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -159,3 +201,6 @@ SIMPLE_JWT = {
 
 # Custom User Model
 AUTH_USER_MODEL = 'accounts.User'
+
+# Key Management Service Configuration
+KM_SERVICE_URL = os.getenv('KM_SERVICE_URL', 'http://localhost:5001')
