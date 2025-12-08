@@ -46,11 +46,15 @@ class AttachmentSerializer(serializers.ModelSerializer):
     """Serializer for attachments"""
     class Meta:
         model = Attachment
-        fields = ['id', 'filename', 'content_type', 'size', 'created_at']
+        fields = [
+            'id', 'filename', 'content_type', 'size', 
+            'is_encrypted', 'security_level', 'encryption_metadata',
+            'created_at'
+        ]
 
 
 class SendEmailSerializer(serializers.Serializer):
-    """Serializer for sending emails"""
+    """Serializer for sending emails with attachments"""
     account_id = serializers.IntegerField()
     to_emails = serializers.ListField(child=serializers.EmailField())
     subject = serializers.CharField()
@@ -60,3 +64,5 @@ class SendEmailSerializer(serializers.Serializer):
         choices=['regular', 'aes', 'qkd', 'qrng_pqc'],
         default='regular'
     )
+    # Attachments will be handled via request.FILES, not in serializer
+    # This allows multipart/form-data uploads

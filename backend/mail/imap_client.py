@@ -1,5 +1,6 @@
 import imaplib
 import email
+import base64
 from email.header import decode_header
 from datetime import datetime
 from .models import Email
@@ -86,14 +87,133 @@ class IMAPClient:
         to_emails = [addr[1] for addr in email.utils.getaddresses([email_message.get('To', '')])]
         cc_emails = [addr[1] for addr in email.utils.getaddresses([email_message.get('Cc', '')])]
         
-        # Get body
+        # Get body and attachments
         body_text = ''
         body_html = ''
+        attachments = []
         
         if email_message.is_multipart():
             for part in email_message.walk():
                 content_type = part.get_content_type()
-                if content_type == 'text/plain':
+                content_disposition = part.get('Content-Disposition', '')
+                
+                # Check if this is an attachment
+                if 'attachment' in content_disposition:
+                    filename = part.get_filename()
+                    if filename:
+                        # Decode filename if needed
+                        if isinstance(filename, bytes):
+                            filename = filename.decode('utf-8', errors='ignore')
+                        
+                        # Check if encrypted FIRST to determine how to handle payload
+                        is_att_encrypted = part.get('X-QuteMail-Attachment-Encrypted') == 'true'
+                        att_security_level = part.get('X-QuteMail-Attachment-Security-Level')
+                        
+                        # Get attachment data
+                        # For encrypted attachments, payload is base64 STRING (like email body)
+                        # For regular attachments, payload is binary bytes
+                        if is_att_encrypted:
+                            # Encrypted attachment: payload is base64 string (like email body)
+                            # IMPORTANT: Don't use decode=True - we want the string, not decoded bytes!
+                            # The email library will handle base64 decoding automatically if Content-Transfer-Encoding is set
+                            payload = part.get_payload(decode=False)  # Get as string, not decoded
+                            
+                            if isinstance(payload, str):
+                                # Remove any whitespace/newlines from base64 string
+                                encrypted_base64_string = payload.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+                                attachment_data_str = encrypted_base64_string
+                            elif isinstance(payload, list):
+                                # If it's a list (multipart), get the first part
+                                if len(payload) > 0:
+                                    first_part = payload[0]
+                                    if isinstance(first_part, str):
+                                        attachment_data_str = first_part.strip().replace('\n', '').replace('\r', '').replace(' ', '')
+                                    else:
+                                        attachment_data_str = str(first_part).strip()
+                                else:
+                                    attachment_data_str = ''
+                            else:
+                                attachment_data_str = str(payload).strip() if payload else ''
+                            
+                            if not attachment_data_str:
+                                print(f"[IMAP] Warning: Empty encrypted attachment data for {filename}")
+                                continue
+                            
+                            # Store original encrypted base64 string for potential decryption later
+                            original_encrypted_base64 = attachment_data_str
+                            attachment_decrypted = False
+                            
+                            # Try to decrypt
+                            try:
+                                from crypto import router as crypto_router
+                                
+                                # Decrypt using base64 string directly (like email body)
+                                decrypt_kwargs = {
+                                    'ciphertext': attachment_data_str,  # Already base64 string!
+                                    'requester_sae': self.account.email
+                                }
+                                
+                                # Add level-specific parameters
+                                if att_security_level == 'qkd':
+                                    key_id = part.get('X-QuteMail-Attachment-Key-ID')
+                                    if key_id:
+                                        decrypt_kwargs['key_id'] = key_id
+                                        print(f"[IMAP] Decrypting attachment {filename} with key_id: {key_id}")
+                                elif att_security_level == 'aes':
+                                    aes_key = part.get('X-QuteMail-Attachment-AES-Key')
+                                    if aes_key:
+                                        decrypt_kwargs['key_material'] = base64.b64decode(aes_key)
+                                
+                                # Decrypt attachment (same as email body - pass base64 string directly)
+                                decrypted_bytes = crypto_router.decrypt(
+                                    security_level=att_security_level,
+                                    **decrypt_kwargs
+                                )
+                                attachment_data = decrypted_bytes
+                                attachment_decrypted = True
+                                print(f"[IMAP] Successfully decrypted attachment: {filename}")
+                            except Exception as e:
+                                import traceback
+                                print(f"[IMAP] Attachment decryption failed for {filename}: {str(e)}")
+                                print(f"[IMAP] Traceback: {traceback.format_exc()}")
+                                # Decryption failed - store the encrypted base64 string as bytes
+                                # We'll need to decode it back to base64 string on download
+                                # Store the base64 string encoded as UTF-8 bytes so we can retrieve it later
+                                attachment_data = original_encrypted_base64.encode('utf-8')
+                                attachment_decrypted = False
+                                print(f"[IMAP] Storing encrypted attachment as base64 string (will retry decryption on download)")
+                        else:
+                            # Regular (non-encrypted) attachment: get as bytes
+                            attachment_data = part.get_payload(decode=True)
+                            if attachment_data is None:
+                                payload = part.get_payload()
+                                if isinstance(payload, str):
+                                    try:
+                                        attachment_data = base64.b64decode(payload)
+                                    except:
+                                        attachment_data = payload.encode('utf-8')
+                                else:
+                                    attachment_data = b''
+                            attachment_decrypted = True  # Not encrypted, so "decrypted"
+                        
+                        if len(attachment_data) == 0:
+                            print(f"[IMAP] Warning: Empty attachment data for {filename}")
+                            continue
+                        
+                        # Store attachment info
+                        # If decrypted, store decrypted bytes; if not, store encrypted bytes (decoded from base64)
+                        attachments.append({
+                            'filename': filename,
+                            'content_type': content_type or 'application/octet-stream',
+                            'size': len(attachment_data),  # Size of stored data
+                            'file_data': attachment_data,  # Binary data (decrypted or encrypted bytes)
+                            'is_encrypted': is_att_encrypted and not attachment_decrypted,  # Mark as encrypted only if not decrypted
+                            'security_level': att_security_level if is_att_encrypted else 'regular',
+                            'encryption_metadata': {
+                                'key_id': part.get('X-QuteMail-Attachment-Key-ID') if is_att_encrypted else None
+                            } if is_att_encrypted else None
+                        })
+                elif content_type == 'text/plain':
                     body_text = part.get_payload(decode=True).decode(errors='ignore')
                 elif content_type == 'text/html':
                     body_html = part.get_payload(decode=True).decode(errors='ignore')
@@ -107,7 +227,7 @@ class IMAPClient:
         if is_encrypted and security_level and security_level != 'regular':
             try:
                 from crypto import router as crypto_router
-                import base64
+                # base64 is already imported at module level
                 
                 # Prepare decryption parameters based on security level
                 decrypt_kwargs = {
@@ -159,4 +279,9 @@ class IMAPClient:
             'body_html': body_html,
             'sent_at': sent_at,
             'is_encrypted': is_encrypted,  # Include encryption flag
+            'attachments': attachments,  # Include attachments list
+            'security_level': security_level if is_encrypted else 'regular',
+            'encryption_metadata': {
+                'key_id': email_message.get('X-QuteMail-Key-ID') if is_encrypted else None
+            } if is_encrypted else None
         }
