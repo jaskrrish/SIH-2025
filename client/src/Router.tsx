@@ -1,9 +1,11 @@
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import Auth from './pages/Auth';
-import Dashboard from './pages/Dashboard';
-import Mailbox from './pages/Mailbox';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { authUtils, type UserData } from './lib/auth';
+
+// Lazy load page components for code-splitting
+const Auth = lazy(() => import('./pages/Auth'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Mailbox = lazy(() => import('./pages/Mailbox'));
 
 interface EmailAccount {
     id: string;
@@ -172,42 +174,51 @@ function MailboxPage() {
 
 export default function Router() {
     return (
-        <Routes>
-            {/* Auth Route */}
-            <Route 
-                path="/auth" 
-                element={
-                    <AuthRoute>
-                        <AuthPage />
-                    </AuthRoute>
-                } 
-            />
-            
-            {/* Dashboard Route */}
-            <Route 
-                path="/dashboard" 
-                element={
-                    <ProtectedRoute>
-                        <DashboardPage />
-                    </ProtectedRoute>
-                } 
-            />
-            
-            {/* Mailbox Route */}
-            <Route 
-                path="/mailbox/:accountId" 
-                element={
-                    <ProtectedRoute>
-                        <MailboxPage />
-                    </ProtectedRoute>
-                } 
-            />
-            
-            {/* Default Route */}
-            <Route 
-                path="*" 
-                element={<Navigate to="/auth" replace />} 
-            />
-        </Routes>
+        <Suspense fallback={
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading...</p>
+                </div>
+            </div>
+        }>
+            <Routes>
+                {/* Auth Route */}
+                <Route 
+                    path="/auth" 
+                    element={
+                        <AuthRoute>
+                            <AuthPage />
+                        </AuthRoute>
+                    } 
+                />
+                
+                {/* Dashboard Route */}
+                <Route 
+                    path="/dashboard" 
+                    element={
+                        <ProtectedRoute>
+                            <DashboardPage />
+                        </ProtectedRoute>
+                    } 
+                />
+                
+                {/* Mailbox Route */}
+                <Route 
+                    path="/mailbox/:accountId" 
+                    element={
+                        <ProtectedRoute>
+                            <MailboxPage />
+                        </ProtectedRoute>
+                    } 
+                />
+                
+                {/* Default Route */}
+                <Route 
+                    path="*" 
+                    element={<Navigate to="/auth" replace />} 
+                />
+            </Routes>
+        </Suspense>
     );
 }

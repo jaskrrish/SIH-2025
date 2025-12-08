@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 type AuthMode = 'login' | 'signup';
 
 interface AuthProps {
-    onLogin: (userData: { username: string; email: string }) => void;
+    onLogin: (userData: { username: string; email: string; name?: string }) => void;
 }
 
 export default function Auth({ onLogin }: AuthProps) {

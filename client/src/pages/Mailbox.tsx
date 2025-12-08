@@ -164,7 +164,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
     }
   };
 
-  const filteredEmails = emails.filter(email => {
+  const filteredEmails = emails.filter(() => {
     // For now, all emails go to inbox - we'll add folder support later
     if (selectedFolder === 'inbox') return true;
     return false;
@@ -403,13 +403,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   disabled={sending}
                   className={cn(
                     "px-6 py-2 text-white font-medium rounded-lg shadow-lg flex items-center gap-2 transition-all",
-                    encryptionMethod === 'quantum'
+                    encryptionMethod === 'qkd'
                       ? "bg-isro-orange hover:opacity-90 shadow-isro-orange/20"
                       : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20",
                     sending && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <span>{sending ? 'Sending...' : (encryptionMethod === 'quantum' ? 'Send Quantum Secure' : 'Send Normal')}</span>
+                  <span>{sending ? 'Sending...' : (encryptionMethod === 'qkd' ? 'Send Quantum Secure' : 'Send Normal')}</span>
                   <SendIcon className="h-4 w-4" />
                 </button>
               </div>
