@@ -79,20 +79,30 @@ def list_emails(request):
     
     emails = emails[:limit]
     
-    # Return lightweight metadata
-    email_list = [{
-        'id': email.id,
-        'message_id': email.message_id,
-        'subject': email.subject,
-        'from_email': email.from_email,
-        'from_name': email.from_name,
-        'is_read': email.is_read,
-        'is_starred': email.is_starred,
-        'is_encrypted': email.is_encrypted,
-        'has_attachments': email.has_attachments,
-        'sent_at': email.sent_at,
-        'cached_at': email.cached_at,
-    } for email in emails]
+    # Return lightweight metadata with envelope info from cache
+    email_list = []
+    for email in emails:
+        email_data = {
+            'id': email.id,
+            'message_id': email.message_id,
+            'subject': email.subject,
+            'from_email': email.from_email,
+            'from_name': email.from_name,
+            'is_read': email.is_read,
+            'is_starred': email.is_starred,
+            'is_encrypted': email.is_encrypted,
+            'has_attachments': email.has_attachments,
+            'sent_at': email.sent_at,
+            'cached_at': email.cached_at,
+        }
+        
+        # Try to get envelope data from cache (lightweight)
+        email_content = EmailCacheService.get_email_content(email.message_id)
+        if email_content:
+            email_data['envelope'] = email_content.get('envelope', {})
+            email_data['headers'] = email_content.get('headers', {})
+        
+        email_list.append(email_data)
     
     return Response(email_list)
 
@@ -211,6 +221,8 @@ def get_email(request, email_id):
             'sent_at': metadata.sent_at,
             'security_level': security_level,
             'encryption_metadata': email_content.get('encryption_metadata'),
+            'headers': email_content.get('headers', {}),  # All email headers
+            'envelope': email_content.get('envelope', {}),  # Envelope details
         }
         
         return Response(response_data)

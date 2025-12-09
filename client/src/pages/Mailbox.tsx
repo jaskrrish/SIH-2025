@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2, Download, Info } from 'lucide-react';
+import EmailInfoPopup from '@/components/EmailInfoPopup';
 import { EncryptedText } from "@/components/ui/encrypted-text";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -57,6 +58,8 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
   const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qs_otp' | 'qkd'>('qkd');
+  const [emailInfoOpen, setEmailInfoOpen] = useState(false);
+  const [infoEmail, setInfoEmail] = useState<any>(null);
   
   // Compose form state
   const [composeTo, setComposeTo] = useState('');
@@ -290,7 +293,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                         <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'aes' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400")}>
                           <Lock className="h-4 w-4" />
                         </div>
-                        <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>Standard AES</span>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>QKD+PQC</span>
                       </div>
                       <p className="text-xs text-gray-500">AES-256-GCM encryption</p>
                       {encryptionMethod === 'aes' && (
@@ -617,10 +620,23 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 )}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <h3 className={cn("font-medium text-sm truncate pr-2", !email.is_read && "font-bold text-gray-900")}>
-                    {email.from_name || email.from_email}
-                  </h3>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{formatTime(email.sent_at)}</span>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <h3 className={cn("font-medium text-sm truncate", !email.is_read && "font-bold text-gray-900")}>
+                      {email.from_name || email.from_email}
+                    </h3>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInfoEmail(email);
+                        setEmailInfoOpen(true);
+                      }}
+                      className="p-1 hover:bg-blue-100 rounded-full transition-colors shrink-0"
+                      title="View email info"
+                    >
+                      <Info className="h-3.5 w-3.5 text-isro-blue" />
+                    </button>
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap ml-2">{formatTime(email.sent_at)}</span>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
                   <h4 className={cn("text-sm truncate text-gray-700", !email.is_read && "font-semibold")}>
@@ -855,6 +871,12 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
           </div>
         )}
       </div>
+      
+      <EmailInfoPopup
+        isOpen={emailInfoOpen}
+        onClose={() => setEmailInfoOpen(false)}
+        email={infoEmail || {}}
+      />
     </div>
   );
 }

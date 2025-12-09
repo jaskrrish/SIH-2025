@@ -316,6 +316,31 @@ class IMAPClient:
         # Message ID
         message_id = email_message.get('Message-ID', f'<{id(email_message)}@local>')
         
+        # Extract all email headers for info display
+        all_headers = {}
+        for header_name, header_value in email_message.items():
+            # Store all headers as key-value pairs
+            if header_name in all_headers:
+                # Handle duplicate headers (combine into list)
+                if isinstance(all_headers[header_name], list):
+                    all_headers[header_name].append(header_value)
+                else:
+                    all_headers[header_name] = [all_headers[header_name], header_value]
+            else:
+                all_headers[header_name] = header_value
+        
+        # Envelope details for display
+        envelope = {
+            'from': from_header,
+            'to': email_message.get('To', ''),
+            'cc': email_message.get('Cc', ''),
+            'bcc': email_message.get('Bcc', ''),
+            'reply_to': email_message.get('Reply-To', ''),
+            'date': date_str,
+            'message_id': message_id,
+            'subject': subject or '(No Subject)',
+        }
+        
         return {
             'message_id': message_id,
             'subject': subject or '(No Subject)',
@@ -332,5 +357,7 @@ class IMAPClient:
             'security_level': security_level if is_encrypted else 'regular',
             'encryption_metadata': {
                 'key_id': email_message.get('X-QuteMail-Key-ID') if is_encrypted else None
-            } if is_encrypted else None
+            } if is_encrypted else None,
+            'headers': all_headers,  # All email headers for info display
+            'envelope': envelope,  # Envelope details for display
         }
