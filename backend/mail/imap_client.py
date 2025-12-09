@@ -25,10 +25,13 @@ class IMAPClient:
             
             # Login
             password = self.account.get_app_password()
-            # print(f"IMAP Login attempt - Host: {self.account.imap_host}:{self.account.imap_port}")
-            # print(f"IMAP Login attempt - Email: {self.account.email}")
-            # print(f"IMAP Login attempt - Password length: {len(password)} chars")
-            # print(f"IMAP Login attempt - Password first 4 chars: '{password}'")
+            print(f"[IMAP] Connecting to {self.account.imap_host}:{self.account.imap_port}")
+            print(f"[IMAP] Email: {self.account.email}")
+            print(f"[IMAP] Password type: {type(password)}, length: {len(password) if password else 0}")
+            
+            # Ensure password is a string
+            if not isinstance(password, str):
+                raise ValueError(f"Password must be a string, got {type(password)}")
             
             self.connection.login(self.account.email, password)
             print("IMAP Login successful!")

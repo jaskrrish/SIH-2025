@@ -64,8 +64,24 @@ class EmailAccount(models.Model):
     
     def get_app_password(self):
         """Decrypt and return app password"""
+        if not self._app_password:
+            raise ValueError("No app password stored for this account")
+        
         cipher = self._get_cipher()
-        return cipher.decrypt(self._app_password).decode()
+        try:
+            # Convert memoryview to bytes if needed (Django BinaryField returns memoryview)
+            password_bytes = bytes(self._app_password) if isinstance(self._app_password, memoryview) else self._app_password
+            
+            decrypted = cipher.decrypt(password_bytes)
+            password = decrypted.decode('utf-8')
+            
+            # Ensure it's a string
+            if not isinstance(password, str):
+                raise ValueError(f"Decrypted password is not a string: {type(password)}")
+            
+            return password
+        except Exception as e:
+            raise ValueError(f"Failed to decrypt app password: {str(e)}")
     
     def save(self, *args, **kwargs):
         # Set default IMAP/SMTP settings based on provider
