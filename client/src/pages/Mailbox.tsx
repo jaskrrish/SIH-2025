@@ -21,13 +21,12 @@ interface MailboxProps {
 }
 
 interface Attachment {
-  id: number;
   filename: string;
   content_type: string;
   size: number;
+  data: string;  // Base64 encoded attachment data
   is_encrypted: boolean;
   security_level: string;
-  created_at: string;
 }
 
 interface Email {
@@ -43,6 +42,7 @@ interface Email {
   is_read: boolean;
   is_starred: boolean;
   is_encrypted: boolean;
+  security_level?: string;
   attachments?: Attachment[];
 }
 
@@ -56,7 +56,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
-  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qkd' | 'qrng_pqc'>('qkd');
+  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qs_otp' | 'qkd'>('qkd');
   
   // Compose form state
   const [composeTo, setComposeTo] = useState('');
@@ -101,6 +101,26 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
       setError(err.message || 'Failed to load emails');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEmailClick = async (email: Email) => {
+    // If email already has body content, just select it
+    if (email.body_text) {
+      setSelectedEmail(email);
+      return;
+    }
+    
+    // Otherwise, fetch full email content from API
+    try {
+      const fullEmail = await api.getEmail(email.id);
+      setSelectedEmail(fullEmail);
+      
+      // Update the email in the list with full content
+      setEmails(prev => prev.map(e => e.id === fullEmail.id ? fullEmail : e));
+    } catch (err: any) {
+      console.error('Failed to fetch email:', err);
+      setError('Failed to load email content');
     }
   };
 
@@ -278,6 +298,28 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                       )}
                     </button>
 
+                    {/* Quantum Secure OTP */}
+                    <button
+                      onClick={() => setEncryptionMethod('qs_otp')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'qs_otp'
+                          ? "bg-purple-50 border-purple-200 ring-1 ring-purple-500"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'qs_otp' ? "bg-purple-100 text-purple-600" : "bg-gray-100 text-gray-400")}>
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'qs_otp' ? "text-purple-900" : "text-gray-600")}>Quantum OTP</span>
+                      </div>
+                      <p className="text-xs text-gray-500">QKD one-time pad</p>
+                      {encryptionMethod === 'qs_otp' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-purple-500" />
+                      )}
+                    </button>
+
                     {/* QKD + AES */}
                     <button
                       onClick={() => setEncryptionMethod('qkd')}
@@ -298,22 +340,6 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                       {encryptionMethod === 'qkd' && (
                         <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
                       )}
-                    </button>
-
-                    {/* QRNG + PQC - Disabled/Coming Soon */}
-                    <button
-                      disabled
-                      className="p-3 rounded-xl border text-left transition-all relative overflow-hidden bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed"
-                      title="Coming soon"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="p-1.5 rounded-lg bg-purple-100 text-purple-400">
-                          <ShieldCheck className="h-4 w-4" />
-                        </div>
-                        <span className="font-semibold text-sm text-gray-500">QRNG + PQC</span>
-                      </div>
-                      <p className="text-xs text-gray-400">Coming soon</p>
-                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-[10px] font-medium rounded">SOON</div>
                     </button>
                   </div>
                 </div>
@@ -403,13 +429,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   disabled={sending}
                   className={cn(
                     "px-6 py-2 text-white font-medium rounded-lg shadow-lg flex items-center gap-2 transition-all",
-                    encryptionMethod === 'qkd'
+                    encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp'
                       ? "bg-isro-orange hover:opacity-90 shadow-isro-orange/20"
                       : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20",
                     sending && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <span>{sending ? 'Sending...' : (encryptionMethod === 'qkd' ? 'Send Quantum Secure' : 'Send Normal')}</span>
+                  <span>{sending ? 'Sending...' : (encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp' ? 'Send Quantum Secure' : 'Send Normal')}</span>
                   <SendIcon className="h-4 w-4" />
                 </button>
               </div>
@@ -584,7 +610,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             filteredEmails.map(email => (
               <div
                 key={email.id}
-                onClick={() => setSelectedEmail(email)}
+                onClick={() => handleEmailClick(email)}
                 className={cn(
                   "p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors",
                   selectedEmail?.id === email.id && "bg-isro-blue/10 border-l-4 border-l-isro-blue"
@@ -601,11 +627,16 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     {email.subject || '(No subject)'}
                   </h4>
                   {email.is_encrypted && (
-                    <ShieldCheck className="h-3 w-3 text-isro-blue shrink-0" />
+                    <ShieldCheck className={cn(
+                      "h-3 w-3 shrink-0",
+                      email.security_level === 'qs_otp' ? "text-purple-600" : "text-isro-blue"
+                    )} />
                   )}
                 </div>
                 <p className="text-xs text-gray-500 line-clamp-2">
-                  {email.body_text.substring(0, 100)}
+                  {email.is_encrypted 
+                    ? "🔒 Encrypted message - click to decrypt and view" 
+                    : (email.body_text?.substring(0, 100) || "(Click to view)")}
                 </p>
               </div>
             ))
@@ -623,9 +654,20 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 <div className="flex items-center gap-3 mb-4">
                   <h1 className="text-2xl font-bold text-gray-900 truncate">{selectedEmail.subject || '(No subject)'}</h1>
                   {selectedEmail.is_encrypted && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-isro-blue/10 text-isro-blue border-isro-blue/20">
+                    <span className={cn(
+                      "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border",
+                      selectedEmail.security_level === 'qs_otp' 
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : selectedEmail.security_level === 'aes'
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    )}>
                       <ShieldCheck className="h-3 w-3" />
-                      Quantum Secured
+                      {selectedEmail.security_level === 'qs_otp' 
+                        ? 'Quantum OTP'
+                        : selectedEmail.security_level === 'aes'
+                        ? 'AES Encrypted'
+                        : 'QKD Encrypted'}
                     </span>
                   )}
                 </div>
@@ -636,7 +678,18 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{selectedEmail.from_name || selectedEmail.from_email}</p>
-                      <p className="text-sm text-gray-500">to {selectedEmail.to_emails.join(', ')}</p>
+                      <p className="text-sm text-gray-500">
+                        to {(() => {
+                          const emails = selectedEmail.to_emails;
+                          if (!emails) return 'Unknown';
+                          if (Array.isArray(emails)) return emails.join(', ');
+                          try {
+                            return typeof emails === 'string' ? JSON.parse(emails).join(', ') : 'Unknown';
+                          } catch {
+                            return emails;
+                          }
+                        })()}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
@@ -663,7 +716,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     text={selectedEmail.body_text}
                     encryptedClassName="text-neutral-500"
                     revealedClassName="dark:text-white text-black"
-                    revealDelayMs={5}
+                    revealDelayMs={50}
                   />
                 ) : (
                   selectedEmail.body_text
@@ -675,9 +728,9 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
                   <h4 className="text-sm font-semibold text-gray-900 mb-3">Attachments ({selectedEmail.attachments.length})</h4>
                   <div className="space-y-2">
-                    {selectedEmail.attachments.map((attachment) => (
+                    {selectedEmail.attachments.map((attachment, index) => (
                       <div
-                        key={attachment.id}
+                        key={`${attachment.filename}-${index}`}
                         className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 hover:border-isro-blue transition-colors"
                       >
                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -698,10 +751,34 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                           </div>
                         </div>
                         <button
-                          onClick={async () => {
+                          onClick={() => {
                             try {
-                              await api.downloadAttachment(attachment.id, attachment.filename);
+                              // Attachment data is already embedded as base64
+                              if (!attachment.data) {
+                                alert('Attachment data not available');
+                                return;
+                              }
+                              
+                              // Convert base64 to blob and download
+                              const byteCharacters = atob(attachment.data);
+                              const byteNumbers = new Array(byteCharacters.length);
+                              for (let i = 0; i < byteCharacters.length; i++) {
+                                byteNumbers[i] = byteCharacters.charCodeAt(i);
+                              }
+                              const byteArray = new Uint8Array(byteNumbers);
+                              const blob = new Blob([byteArray], { type: attachment.content_type });
+                              
+                              // Create download link
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = attachment.filename;
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                              document.body.removeChild(a);
                             } catch (err: any) {
+                              console.error('Download error:', err);
                               alert(err.message || 'Failed to download attachment');
                             }
                           }}
@@ -717,13 +794,36 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
               )}
 
               {selectedEmail.is_encrypted && (
-                <div className="mt-12 p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-start gap-3">
-                  <ShieldCheck className="h-5 w-5 text-isro-blue mt-0.5" />
+                <div className={cn(
+                  "mt-12 p-4 rounded-lg border flex items-start gap-3",
+                  selectedEmail.security_level === 'qs_otp'
+                    ? "bg-purple-50 border-purple-200"
+                    : selectedEmail.security_level === 'aes'
+                    ? "bg-blue-50 border-blue-200"
+                    : "bg-emerald-50 border-emerald-200"
+                )}>
+                  <ShieldCheck className={cn(
+                    "h-5 w-5 mt-0.5",
+                    selectedEmail.security_level === 'qs_otp'
+                      ? "text-purple-600"
+                      : selectedEmail.security_level === 'aes'
+                      ? "text-blue-600"
+                      : "text-emerald-600"
+                  )} />
                   <div>
-                    <h4 className="text-sm font-semibold text-slate-900">Quantum Encrypted Message</h4>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      {selectedEmail.security_level === 'qs_otp'
+                        ? 'Quantum One-Time Pad Encryption'
+                        : selectedEmail.security_level === 'aes'
+                        ? 'AES-256 Encryption'
+                        : 'QKD + AES Encryption'}
+                    </h4>
                     <p className="text-xs text-slate-600 mt-1">
-                      This message was secured using quantum-safe encryption.
-                      (Placeholder - Phase 2 implementation)
+                      {selectedEmail.security_level === 'qs_otp'
+                        ? 'This message was secured using QKD-derived keys with bitwise XOR (true one-time pad). Mathematically unbreakable when properly implemented.'
+                        : selectedEmail.security_level === 'aes'
+                        ? 'This message was secured using industry-standard AES-256-GCM encryption with authenticated encryption.'
+                        : 'This message was secured using quantum key distribution (BB84 protocol) combined with AES-256 encryption.'}
                     </p>
                   </div>
                 </div>
