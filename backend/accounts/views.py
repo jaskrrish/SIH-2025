@@ -5,6 +5,23 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from .serializers import UserRegistrationSerializer, UserSerializer
+from crypto.km_client import km_client
+
+
+def initialize_pqc_keypair(user):
+    """
+    Initialize PQC keypair for user via KM service
+    Called during registration or first login
+    """
+    try:
+        # Generate or retrieve PQC keypair from KM service
+        result = km_client.generate_pqc_keypair(user_sae=user.email)
+        print(f"[PQC] {'Generated' if result['is_new'] else 'Retrieved'} PQC keypair for {user.email}: {result['key_id']}")
+        return True
+    except Exception as e:
+        print(f"[PQC] Failed to initialize PQC keypair for {user.email}: {str(e)}")
+        # Don't fail registration/login if PQC init fails
+        return False
 
 
 @api_view(['POST'])
@@ -18,6 +35,9 @@ def register(request):
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.save()
+        
+        # Initialize PQC keypair for new user
+        initialize_pqc_keypair(user)
         
         # Auto-configure email account for aalan@qutemail.tech
         if user.username == 'aalan':
@@ -77,6 +97,9 @@ def login(request):
             {'error': 'Invalid credentials'},
             status=status.HTTP_401_UNAUTHORIZED
         )
+    
+    # Initialize PQC keypair on login (if not already done)
+    initialize_pqc_keypair(user)
     
     # Generate JWT tokens
     refresh = RefreshToken.for_user(user)

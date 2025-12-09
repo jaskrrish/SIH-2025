@@ -171,6 +171,148 @@ class KMServiceClient:
         
         except requests.exceptions.RequestException as e:
             return {"status": "error", "error": str(e)}
+    
+    # ==================== PQC Key Management ====================
+    
+    def generate_pqc_keypair(self, user_sae: str) -> dict:
+        """
+        Generate or retrieve PQC keypair for a user
+        
+        Args:
+            user_sae: User SAE identity (email address)
+        
+        Returns:
+            dict: {
+                'key_id': '<uuid>',
+                'public_key': '<base64>',
+                'private_key': '<base64>',
+                'algorithm': 'ML-KEM-768',
+                'is_new': bool
+            }
+        
+        Raises:
+            Exception: If KM request fails
+        """
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/v1/pqc/keypair",
+                json={"user_sae": user_sae},
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                error_data = response.json()
+                raise Exception(f"PQC keypair generation failed: {error_data.get('error', 'Unknown error')}")
+            
+            data = response.json()
+            
+            if data['status'] != 'success':
+                raise Exception(f"PQC keypair generation failed: {data.get('error', 'Unknown error')}")
+            
+            print(f"[KM-Client] ✅ PQC keypair {'generated' if data['is_new'] else 'retrieved'}: {data['key_id']}")
+            
+            return {
+                'key_id': data['key_id'],
+                'public_key': data['public_key'],
+                'private_key': data['private_key'],
+                'algorithm': data['algorithm'],
+                'is_new': data['is_new']
+            }
+        
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"KM service connection failed: {str(e)}")
+    
+    def get_pqc_public_key(self, recipient_sae: str) -> dict:
+        """
+        Get PQC public key for a recipient (for sender to encrypt)
+        
+        Args:
+            recipient_sae: Recipient SAE identity (email address)
+        
+        Returns:
+            dict: {
+                'key_id': '<uuid>',
+                'public_key': '<base64>',
+                'algorithm': 'ML-KEM-768'
+            }
+        
+        Raises:
+            Exception: If public key not found or KM request fails
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v1/pqc/public-key/{recipient_sae}",
+                timeout=10
+            )
+            
+            if response.status_code == 404:
+                raise Exception(f"No PQC public key found for {recipient_sae}. Recipient must generate keypair first.")
+            elif response.status_code != 200:
+                error_data = response.json()
+                raise Exception(f"PQC public key retrieval failed: {error_data.get('error', 'Unknown error')}")
+            
+            data = response.json()
+            
+            if data['status'] != 'success':
+                raise Exception(f"PQC public key retrieval failed: {data.get('error', 'Unknown error')}")
+            
+            print(f"[KM-Client] ✅ PQC public key retrieved for: {recipient_sae}")
+            
+            return {
+                'key_id': data['key_id'],
+                'public_key': data['public_key'],
+                'algorithm': data['algorithm']
+            }
+        
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"KM service connection failed: {str(e)}")
+    
+    def get_pqc_private_key(self, user_sae: str) -> dict:
+        """
+        Get PQC private key for a user (for receiver to decrypt)
+        
+        Args:
+            user_sae: User SAE identity (email address)
+        
+        Returns:
+            dict: {
+                'key_id': '<uuid>',
+                'private_key': '<base64>',
+                'algorithm': 'ML-KEM-768'
+            }
+        
+        Raises:
+            Exception: If private key not found or unauthorized
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/api/v1/pqc/private-key/{user_sae}",
+                timeout=10
+            )
+            
+            if response.status_code == 404:
+                raise Exception(f"No PQC private key found for {user_sae}")
+            elif response.status_code == 403:
+                raise Exception(f"Unauthorized: Cannot retrieve private key")
+            elif response.status_code != 200:
+                error_data = response.json()
+                raise Exception(f"PQC private key retrieval failed: {error_data.get('error', 'Unknown error')}")
+            
+            data = response.json()
+            
+            if data['status'] != 'success':
+                raise Exception(f"PQC private key retrieval failed: {data.get('error', 'Unknown error')}")
+            
+            print(f"[KM-Client] ✅ PQC private key retrieved for: {user_sae}")
+            
+            return {
+                'key_id': data['key_id'],
+                'private_key': data['private_key'],
+                'algorithm': data['algorithm']
+            }
+        
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"KM service connection failed: {str(e)}")
 
 
 # Global instance

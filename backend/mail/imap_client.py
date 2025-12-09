@@ -224,6 +224,13 @@ class IMAPClient:
                                 key_id = part.get('X-QuteMail-Attachment-Key-ID')
                                 if key_id:
                                     att_metadata['key_id'] = key_id
+                            elif att_security_level == 'qkd_pqc':
+                                encapsulated_blob = part.get('X-QuteMail-Attachment-KEM')
+                                kem_algorithm = part.get('X-QuteMail-Attachment-KEM-Algorithm')
+                                if encapsulated_blob:
+                                    att_metadata['encapsulated_blob'] = encapsulated_blob
+                                if kem_algorithm:
+                                    att_metadata['kem_algorithm'] = kem_algorithm
                             elif att_security_level == 'aes':
                                 aes_key = part.get('X-QuteMail-Attachment-AES-Key')
                                 aes_salt = part.get('X-QuteMail-Attachment-AES-Salt')
@@ -330,7 +337,30 @@ class IMAPClient:
             'is_encrypted': is_encrypted,  # Include encryption flag
             'attachments': attachments,  # Include attachments list
             'security_level': security_level if is_encrypted else 'regular',
-            'encryption_metadata': {
-                'key_id': email_message.get('X-QuteMail-Key-ID') if is_encrypted else None
-            } if is_encrypted else None
+            'encryption_metadata': self._extract_encryption_metadata(email_message, security_level) if is_encrypted else None
         }
+    
+    def _extract_encryption_metadata(self, email_message, security_level):
+        """Extract encryption metadata from email headers based on security level"""
+        metadata = {}
+        
+        if security_level == 'qkd':
+            key_id = email_message.get('X-QuteMail-Key-ID')
+            if key_id:
+                metadata['key_id'] = key_id
+        elif security_level == 'qkd_pqc':
+            encapsulated_blob = email_message.get('X-QuteMail-KEM')
+            kem_algorithm = email_message.get('X-QuteMail-KEM-Algorithm')
+            if encapsulated_blob:
+                metadata['encapsulated_blob'] = encapsulated_blob
+            if kem_algorithm:
+                metadata['kem_algorithm'] = kem_algorithm
+        elif security_level == 'aes':
+            aes_key = email_message.get('X-QuteMail-AES-Key')
+            aes_salt = email_message.get('X-QuteMail-AES-Salt')
+            if aes_key:
+                metadata['key'] = aes_key
+            if aes_salt:
+                metadata['salt'] = aes_salt
+        
+        return metadata if metadata else None

@@ -2,13 +2,14 @@
 Crypto router - dispatches to appropriate security level
 """
 from typing import Optional
-from . import level_regular, level_aes, level_qkd, level_qrng_pqc, level_qs_otp
+from . import level_regular, level_aes, level_qkd, level_qrng_pqc, level_qs_otp, level_qkd_pqc
 
 
 SECURITY_LEVELS = {
     'regular': level_regular,
     'aes': level_aes,
     'qkd': level_qkd,
+    'qkd_pqc': level_qkd_pqc,
     'qrng_pqc': level_qrng_pqc,
     'qs_otp': level_qs_otp,
 }
@@ -19,7 +20,7 @@ def encrypt(security_level: str, plaintext: bytes, **kwargs) -> dict:
     Encrypt data using specified security level
     
     Args:
-        security_level: One of ['regular', 'aes', 'qkd', 'qrng_pqc', 'qs_otp']
+        security_level: One of ['regular', 'aes', 'qkd', 'qkd_pqc', 'qrng_pqc', 'qs_otp']
         plaintext: Data to encrypt
         **kwargs: Additional parameters for specific levels
     
@@ -56,7 +57,7 @@ def decrypt(security_level: str, ciphertext, **kwargs) -> bytes:
     Decrypt data using specified security level
     
     Args:
-        security_level: One of ['regular', 'aes', 'qkd', 'qrng_pqc', 'qs_otp']
+        security_level: One of ['regular', 'aes', 'qkd', 'qkd_pqc', 'qrng_pqc', 'qs_otp']
         ciphertext: Encrypted data
         **kwargs: Additional parameters for specific levels
     

@@ -199,6 +199,17 @@ class EmailCacheService:
                             key_id=key_id,
                             requester_sae=account.email
                         )
+                    elif security_level == 'qkd_pqc':
+                        encapsulated_blob = encryption_metadata.get('encapsulated_blob')
+                        if not encapsulated_blob:
+                            raise ValueError('QKD+PQC email missing encapsulated_blob')
+                        # QKD+PQC requires: ciphertext, encapsulated_blob, requester_sae
+                        decrypted_bytes = crypto_router.decrypt(
+                            security_level='qkd_pqc',
+                            ciphertext=body_text,
+                            encapsulated_blob=encapsulated_blob,
+                            requester_sae=account.email
+                        )
                     elif security_level == 'aes':
                         aes_key = encryption_metadata.get('key')
                         if not aes_key:
@@ -252,6 +263,17 @@ class EmailCacheService:
                                 security_level='qkd',
                                 ciphertext=att_data,
                                 key_id=key_id,
+                                requester_sae=account.email
+                            )
+                        elif att_security_level == 'qkd_pqc':
+                            encapsulated_blob = att_metadata.get('encapsulated_blob')
+                            if not encapsulated_blob:
+                                raise ValueError(f"QKD+PQC attachment {att.get('filename')} missing encapsulated_blob")
+                            # QKD+PQC requires: ciphertext, encapsulated_blob, requester_sae
+                            decrypted_bytes = crypto_router.decrypt(
+                                security_level='qkd_pqc',
+                                ciphertext=att_data,
+                                encapsulated_blob=encapsulated_blob,
                                 requester_sae=account.email
                             )
                         elif att_security_level == 'aes':

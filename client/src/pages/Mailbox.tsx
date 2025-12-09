@@ -56,7 +56,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
-  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qs_otp' | 'qkd'>('qkd');
+  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qs_otp' | 'qkd' | 'qkd_pqc'>('qkd');
   
   // Compose form state
   const [composeTo, setComposeTo] = useState('');
@@ -339,6 +339,28 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                       <p className="text-xs text-gray-500">BB84 quantum keys</p>
                       {encryptionMethod === 'qkd' && (
                         <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
+                      )}
+                    </button>
+
+                    {/* QKD + PQC */}
+                    <button
+                      onClick={() => setEncryptionMethod('qkd_pqc')}
+                      className={cn(
+                        "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
+                        encryptionMethod === 'qkd_pqc'
+                          ? "bg-indigo-50 border-indigo-200 ring-1 ring-indigo-500"
+                          : "bg-white border-gray-200 hover:border-gray-300"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'qkd_pqc' ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-400")}>
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'qkd_pqc' ? "text-indigo-900" : "text-gray-600")}>QKD + PQC</span>
+                      </div>
+                      <p className="text-xs text-gray-500">Post-quantum secure</p>
+                      {encryptionMethod === 'qkd_pqc' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-indigo-500" />
                       )}
                     </button>
                   </div>

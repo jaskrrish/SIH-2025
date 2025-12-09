@@ -61,13 +61,23 @@ class SMTPClient:
         # Add custom headers for encrypted emails
         if security_level != 'regular' and encryption_metadata:
             msg['X-QuteMail-Security-Level'] = security_level
+            msg['X-QuteMail-Encrypted'] = 'true'
+            
+            # QKD headers
             if 'key_id' in encryption_metadata:
                 msg['X-QuteMail-Key-ID'] = encryption_metadata['key_id']
+            
+            # AES headers
             if 'key' in encryption_metadata:
                 msg['X-QuteMail-AES-Key'] = encryption_metadata['key']
             if 'salt' in encryption_metadata:
                 msg['X-QuteMail-AES-Salt'] = encryption_metadata['salt']
-            msg['X-QuteMail-Encrypted'] = 'true'
+            
+            # QKD+PQC headers
+            if 'encapsulated_blob' in encryption_metadata:
+                msg['X-QuteMail-KEM'] = encryption_metadata['encapsulated_blob']
+            if 'kem_algorithm' in encryption_metadata:
+                msg['X-QuteMail-KEM-Algorithm'] = encryption_metadata['kem_algorithm']
         
         # Handle message structure based on whether we have attachments
         if attachments:
@@ -140,17 +150,26 @@ class SMTPClient:
                         print(f"[SMTP]   - metadata: {att.get('metadata', {})}")
                         
                         if att.get('metadata'):
-                            # For QKD: store key_id (same as email body)
+                            # For QKD: store key_id
                             if 'key_id' in att['metadata']:
                                 attachment_part['X-QuteMail-Attachment-Key-ID'] = att['metadata']['key_id']
                                 print(f"[SMTP]   - Set X-QuteMail-Attachment-Key-ID: {att['metadata']['key_id']}")
-                            # For AES: store key (same as email body)
+                            
+                            # For AES: store key and salt
                             if 'key' in att['metadata']:
                                 attachment_part['X-QuteMail-Attachment-AES-Key'] = att['metadata']['key']
                                 print(f"[SMTP]   - Set X-QuteMail-Attachment-AES-Key: {att['metadata']['key'][:50]}... (base64 key)")
                             if 'salt' in att['metadata']:
                                 attachment_part['X-QuteMail-Attachment-AES-Salt'] = att['metadata']['salt']
                                 print(f"[SMTP]   - Set X-QuteMail-Attachment-AES-Salt")
+                            
+                            # For QKD+PQC: store encapsulated blob and algorithm
+                            if 'encapsulated_blob' in att['metadata']:
+                                attachment_part['X-QuteMail-Attachment-KEM'] = att['metadata']['encapsulated_blob']
+                                print(f"[SMTP]   - Set X-QuteMail-Attachment-KEM: {att['metadata']['encapsulated_blob'][:50]}...")
+                            if 'kem_algorithm' in att['metadata']:
+                                attachment_part['X-QuteMail-Attachment-KEM-Algorithm'] = att['metadata']['kem_algorithm']
+                                print(f"[SMTP]   - Set X-QuteMail-Attachment-KEM-Algorithm: {att['metadata']['kem_algorithm']}")
                         else:
                             print(f"[SMTP]   - WARNING: No metadata found for encrypted attachment!")
                         
