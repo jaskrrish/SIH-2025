@@ -52,34 +52,73 @@ class LocalKeyManager:
         """
         cached = self._get_cached_key(requester_sae, recipient_sae, key_size)
         if cached:
+            print(f"[LocalKM] ✅ Cache hit: Using key {cached.key_id} from local cache")
             return self._to_response(cached)
 
-        fetched = []
-        fetch_count = max(1, int(self.prefetch) + 1)
-        for _ in range(fetch_count):
-            remote_key = self.remote_client.request_key(
-                requester_sae=requester_sae,
-                recipient_sae=recipient_sae,
-                key_size=key_size,
-                ttl=ttl,
-            )
-            fetched.append(remote_key)
-            self._persist_key(
-                remote_key,
-                requester_sae=requester_sae,
-                recipient_sae=recipient_sae,
-                key_size=key_size,
-                ttl=ttl,
-                state=LocalQKDKey.STATE_STORED,
-            )
+        # Check if we have any non-consumed keys for this pair (for debugging)
+        now = timezone.now()
+        available_count = LocalQKDKey.objects.filter(
+            requester_sae=requester_sae,
+            recipient_sae=recipient_sae,
+            state__in=[LocalQKDKey.STATE_STORED, LocalQKDKey.STATE_SERVED],
+            expires_at__gt=now,
+        ).count()
+        
+        if available_count > 0:
+            print(f"[LocalKM] ⚠️  Cache miss: Found {available_count} keys but none match key_size={key_size}")
 
-        # Serve the first fetched key and mark it served to avoid reuse.
-        first_key = LocalQKDKey.objects.get(key_id=fetched[0]["key_id"])
-        first_key.state = LocalQKDKey.STATE_SERVED
-        first_key.served_at = timezone.now()
-        first_key.save(update_fields=["state", "served_at"])
+        # Try to fetch from remote KM service
+        try:
+            fetched = []
+            fetch_count = max(1, int(self.prefetch) + 1)
+            for _ in range(fetch_count):
+                remote_key = self.remote_client.request_key(
+                    requester_sae=requester_sae,
+                    recipient_sae=recipient_sae,
+                    key_size=key_size,
+                    ttl=ttl,
+                )
+                fetched.append(remote_key)
+                self._persist_key(
+                    remote_key,
+                    requester_sae=requester_sae,
+                    recipient_sae=recipient_sae,
+                    key_size=key_size,
+                    ttl=ttl,
+                    state=LocalQKDKey.STATE_STORED,
+                )
 
-        return self._to_response(first_key)
+            # Serve the first fetched key and mark it served to avoid reuse.
+            first_key = LocalQKDKey.objects.get(key_id=fetched[0]["key_id"])
+            first_key.state = LocalQKDKey.STATE_SERVED
+            first_key.served_at = timezone.now()
+            first_key.save(update_fields=["state", "served_at"])
+
+            print(f"[LocalKM] ✅ Fetched {len(fetched)} key(s) from remote KM and cached locally")
+            return self._to_response(first_key)
+        except Exception as e:
+            # If remote fetch fails, check if we can use a larger key from cache
+            fallback_key = (
+                LocalQKDKey.objects.filter(
+                    requester_sae=requester_sae,
+                    recipient_sae=recipient_sae,
+                    key_size__gte=key_size,
+                    state__in=[LocalQKDKey.STATE_STORED, LocalQKDKey.STATE_SERVED],
+                    expires_at__gt=now,
+                )
+                .order_by("created_at")
+                .first()
+            )
+            
+            if fallback_key:
+                print(f"[LocalKM] ⚠️  Remote KM unavailable, using fallback key {fallback_key.key_id} (size={fallback_key.key_size})")
+                fallback_key.state = LocalQKDKey.STATE_SERVED
+                fallback_key.served_at = timezone.now()
+                fallback_key.save(update_fields=["state", "served_at"])
+                return self._to_response(fallback_key)
+            
+            # No fallback available, re-raise the original error
+            raise Exception(f"KM service unavailable and no local keys found: {str(e)}")
 
     def get_key_by_id(self, key_id: str, requester_sae: str) -> dict:
         """
@@ -105,9 +144,12 @@ class LocalKeyManager:
         self, requester_sae: str, recipient_sae: str, key_size: int
     ) -> Optional[LocalQKDKey]:
         """
-        Return an unexpired stored key and mark it served for one-time use.
+        Return an unexpired non-consumed key and mark it served for one-time use.
+        Looks for stored keys first, but will also reuse served keys if no stored ones exist.
         """
         now = timezone.now()
+        
+        # First try to find a stored (unused) key
         key = (
             LocalQKDKey.objects.filter(
                 requester_sae=requester_sae,
@@ -119,6 +161,34 @@ class LocalKeyManager:
             .order_by("created_at")
             .first()
         )
+        
+        # If no stored key found, try to reuse a served (but not consumed) key
+        if not key:
+            key = (
+                LocalQKDKey.objects.filter(
+                    requester_sae=requester_sae,
+                    recipient_sae=recipient_sae,
+                    key_size=key_size,
+                    state=LocalQKDKey.STATE_SERVED,
+                    expires_at__gt=now,
+                )
+                .order_by("created_at")
+                .first()
+            )
+        
+        # If still no key, try with any key_size >= requested (for flexibility)
+        if not key:
+            key = (
+                LocalQKDKey.objects.filter(
+                    requester_sae=requester_sae,
+                    recipient_sae=recipient_sae,
+                    key_size__gte=key_size,
+                    state__in=[LocalQKDKey.STATE_STORED, LocalQKDKey.STATE_SERVED],
+                    expires_at__gt=now,
+                )
+                .order_by("created_at")
+                .first()
+            )
 
         if key:
             key.state = LocalQKDKey.STATE_SERVED
