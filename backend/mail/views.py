@@ -14,79 +14,122 @@ from .smtp_client import SMTPClient
 @permission_classes([IsAuthenticated])
 def sync_emails(request, account_id):
     """
-    Sync/fetch emails from external provider via IMAP
-    GET /api/mail/sync/{account_id}
+    Sync emails for an account.
+    Auto-detects which folders exist on the IMAP server (inbox, sent, draft, trash).
+    Optional query: ?folder=inbox|sent|draft|trash to sync only that folder
     """
     try:
         account = EmailAccount.objects.get(id=account_id, user=request.user)
     except EmailAccount.DoesNotExist:
         return Response({'error': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
-    
+
+    # Optional single folder
+    folder_param = request.query_params.get("folder")
+    FOLDERS = ["inbox", "sent", "draft", "trash"]
+    requested_folders = [folder_param] if folder_param in FOLDERS else FOLDERS
+
+    folder_results = {}
+
     try:
-        # Connect to IMAP and fetch emails
-        print(f"Syncing emails for account: {account.email} (ID: {account.id})")
         imap_client = IMAPClient(account)
         imap_client.connect()
-        
-        fetched_emails = imap_client.fetch_emails(limit=20)
-        print(f"Fetched {len(fetched_emails)} emails from IMAP")
+
+        # Get server folders
+        available_folders = imap_client.list_folders()
+        print("[IMAP] Available folders:", available_folders)
+
+        # Map frontend labels to real IMAP folders
+        IMAP_FOLDER_MAP = {
+            "inbox": "INBOX",
+            "sent": "[Gmail]/Sent Mail",
+            "draft": "[Gmail]/Drafts",
+            "trash": "[Gmail]/Trash",
+        }
+
+        # Only sync folders that exist on the server
+        folders_to_sync = {}
+        for label in requested_folders:
+            imap_folder = IMAP_FOLDER_MAP[label]
+            if imap_folder in available_folders:
+                folders_to_sync[label] = imap_folder
+            else:
+                print(f"[IMAP] Folder {imap_folder} not found on server, skipping")
+
+        # Fetch and store emails
+        for label, imap_folder in folders_to_sync.items():
+            try:
+                fetched_emails = imap_client.fetch_emails(folder=imap_folder, limit=20)
+                new_count = 0
+                for email_data in fetched_emails:
+                    if not Email.objects.filter(message_id=email_data["message_id"]).exists():
+                        Email.objects.create(
+                            user=request.user,
+                            account=account,
+                            folder=email_data.get('folder', label),
+                            message_id=email_data['message_id'],
+                            subject=email_data.get('subject', '(No Subject)'),
+                            from_email=email_data.get('from_email', ''),
+                            from_name=email_data.get('from_name', ''),
+                            to_emails=email_data.get('to_emails', '[]'),
+                            cc_emails=email_data.get('cc_emails', '[]'),
+                            bcc_emails=email_data.get('bcc_emails', '[]'),
+                            body_text=email_data.get('body_text', ''),
+                            body_html=email_data.get('body_html', ''),
+                            sent_at=email_data.get('sent_at', timezone.now()),
+                            is_encrypted=email_data.get('is_encrypted', False)
+                        )
+                        new_count += 1
+                folder_results[label] = new_count
+            except Exception as e:
+                print(f"[IMAP] Could not fetch {imap_folder}: {e}")
+                folder_results[label] = f"Error: {e}"
+
         imap_client.disconnect()
-        
-        # Save to database
-        new_count = 0
-        for email_data in fetched_emails:
-            # Check if email already exists
-            if not Email.objects.filter(message_id=email_data['message_id']).exists():
-                Email.objects.create(
-                    user=request.user,
-                    account=account,
-                    **email_data
-                )
-                new_count += 1
-        
-        # Update last_synced
+
         account.last_synced = timezone.now()
         account.save()
-        
+
         return Response({
-            'message': f'Synced successfully. {new_count} new emails fetched.',
-            'new_emails': new_count,
-            'last_synced': account.last_synced
+            "message": "Sync completed",
+            "folders": folder_results
         })
-    
+
     except Exception as e:
         import traceback
-        error_trace = traceback.format_exc()
-        print(f"Sync error for account {account_id}: {str(e)}")
-        print(error_trace)
+        print(traceback.format_exc())
         return Response(
-            {'error': f'Sync failed: {str(e)}'},
+            {"error": str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_emails(request):
     """
-    List emails for current user
-    GET /api/mail/
+    List emails
     Query params:
-        - account_id (optional): Filter by account
-        - limit (optional): Number of emails (default 50)
+        - account_id (optional)
+        - folder (inbox | sent | draft | trash)
+        - limit (default 50)
     """
-    account_id = request.query_params.get('account_id')
-    limit = int(request.query_params.get('limit', 50))
-    
-    emails = Email.objects.filter(user=request.user)
-    
+
+    account_id = request.query_params.get("account_id")
+    folder = request.query_params.get("folder", "inbox")
+    limit = int(request.query_params.get("limit", 50))
+
+    emails = Email.objects.filter(
+        user=request.user,
+        folder=folder
+    )
+
     if account_id:
         emails = emails.filter(account_id=account_id)
-    
-    emails = emails[:limit]
-    
+
+    emails = emails.order_by("-sent_at")[:limit]
+
     serializer = EmailSerializer(emails, many=True)
     return Response(serializer.data)
+
 
 
 @api_view(['GET'])

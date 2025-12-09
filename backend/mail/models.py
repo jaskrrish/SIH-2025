@@ -5,32 +5,48 @@ from email_accounts.models import EmailAccount
 
 class Email(models.Model):
     """Store fetched emails from external providers"""
-    
+
+    FOLDER_CHOICES = (
+        ('inbox', 'Inbox'),
+        ('sent', 'Sent'),
+        ('draft', 'Draft'),
+        ('trash', 'Trash'),
+    )
+
     # Ownership
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='emails')
     account = models.ForeignKey(EmailAccount, on_delete=models.CASCADE, related_name='emails')
-    
+
+    # ✅ NEW
+    folder = models.CharField(
+        max_length=10,
+        choices=FOLDER_CHOICES,
+        default='inbox',
+        db_index=True
+    )
+
     # Email metadata
-    message_id = models.CharField(max_length=255, unique=True)  # Unique identifier from IMAP
+    message_id = models.CharField(max_length=255, unique=True)
     subject = models.TextField(blank=True)
     from_email = models.EmailField()
     from_name = models.CharField(max_length=255, blank=True)
-    to_emails = models.TextField()  # JSON array of recipients
-    cc_emails = models.TextField(blank=True)  # JSON array
-    bcc_emails = models.TextField(blank=True)  # JSON array
-    
-    # Email content
+    to_emails = models.TextField()
+    cc_emails = models.TextField(blank=True)
+    bcc_emails = models.TextField(blank=True)
+
+    # Content
     body_text = models.TextField(blank=True)
     body_html = models.TextField(blank=True)
-    
+
     # Flags
     is_read = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)
-    is_encrypted = models.BooleanField(default=False)  # QKD encrypted
-    
+    is_encrypted = models.BooleanField(default=False)
+
     # Timestamps
     sent_at = models.DateTimeField()
     received_at = models.DateTimeField(auto_now_add=True)
+
     
     class Meta:
         db_table = 'emails'
