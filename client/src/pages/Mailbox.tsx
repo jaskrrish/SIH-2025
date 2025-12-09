@@ -295,7 +295,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                         </div>
                         <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>QKD+PQC</span>
                       </div>
-                      <p className="text-xs text-gray-500">AES-256-GCM encryption</p>
+                      <p className="text-xs text-gray-500">PQC with AES-256-GCM encryption</p>
                       {encryptionMethod === 'aes' && (
                         <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-500" />
                       )}
