@@ -12,6 +12,39 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Utility functions for managing sent emails in localStorage
+const SENT_EMAILS_STORAGE_KEY = 'qutemail_sent_emails';
+
+function getSentEmails(accountId: string): Email[] {
+  try {
+    const stored = localStorage.getItem(SENT_EMAILS_STORAGE_KEY);
+    if (!stored) return [];
+    const allSentEmails = JSON.parse(stored);
+    return allSentEmails[accountId] || [];
+  } catch (error) {
+    console.error('Error loading sent emails:', error);
+    return [];
+  }
+}
+
+function saveSentEmail(accountId: string, email: Email) {
+  try {
+    const stored = localStorage.getItem(SENT_EMAILS_STORAGE_KEY);
+    const allSentEmails = stored ? JSON.parse(stored) : {};
+    
+    if (!allSentEmails[accountId]) {
+      allSentEmails[accountId] = [];
+    }
+    
+    // Add the new email at the beginning (most recent first)
+    allSentEmails[accountId].unshift(email);
+    
+    localStorage.setItem(SENT_EMAILS_STORAGE_KEY, JSON.stringify(allSentEmails));
+  } catch (error) {
+    console.error('Error saving sent email:', error);
+  }
+}
+
 interface MailboxProps {
     account: {
         id: string;
@@ -49,6 +82,7 @@ interface Email {
 
 export default function Mailbox({ account, onBack }: MailboxProps) {
   const [emails, setEmails] = useState<Email[]>([]);
+  const [sentEmails, setSentEmails] = useState<Email[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -76,6 +110,12 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
     return true;
   };
 
+  // Load sent emails from localStorage
+  const loadSentEmails = () => {
+    const sent = getSentEmails(account.id);
+    setSentEmails(sent);
+  };
+
   // Fetch emails on mount
   useEffect(() => {
     // Skip loading for unconfigured qutemail accounts
@@ -84,7 +124,40 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
       return;
     }
     loadEmails();
+    loadSentEmails();
   }, [account.id]);
+
+  // Reload sent emails when folder changes to sent
+  useEffect(() => {
+    if (selectedFolder === 'sent') {
+      loadSentEmails();
+    }
+  }, [selectedFolder, account.id]);
+
+  // Auto-select first email when folder changes
+  useEffect(() => {
+    if (selectedFolder === 'sent') {
+      if (sentEmails.length > 0) {
+        // Check if current selected email is in sent emails, if not select first
+        const isCurrentInSent = selectedEmail && sentEmails.some(e => e.id === selectedEmail.id);
+        if (!isCurrentInSent) {
+          setSelectedEmail(sentEmails[0]);
+        }
+      } else {
+        setSelectedEmail(null);
+      }
+    } else if (selectedFolder === 'inbox') {
+      if (emails.length > 0) {
+        // Check if current selected email is in inbox emails, if not select first
+        const isCurrentInInbox = selectedEmail && emails.some(e => e.id === selectedEmail.id);
+        if (!isCurrentInInbox) {
+          setSelectedEmail(emails[0]);
+        }
+      } else {
+        setSelectedEmail(null);
+      }
+    }
+  }, [selectedFolder, sentEmails, emails]);
 
   const loadEmails = async () => {
     // Skip loading for unconfigured qutemail accounts
@@ -108,6 +181,12 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   };
 
   const handleEmailClick = async (email: Email) => {
+    // For sent emails (stored locally), just select them directly
+    if (selectedFolder === 'sent') {
+      setSelectedEmail(email);
+      return;
+    }
+    
     // If email already has body content, just select it
     if (email.body_text) {
       setSelectedEmail(email);
@@ -173,6 +252,37 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
         selectedFiles.length > 0 ? selectedFiles : undefined
       );
       
+      // Create sent email object to store locally
+      const sentEmail: Email = {
+        id: Date.now(), // Use timestamp as ID for local storage
+        message_id: `sent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        from_email: account.email,
+        from_name: account.email.split('@')[0], // Use email prefix as name
+        to_emails: [composeTo],
+        subject: composeSubject,
+        body_text: composeBody,
+        body_html: '',
+        sent_at: new Date().toISOString(),
+        is_read: true,
+        is_starred: false,
+        is_encrypted: encryptionMethod !== 'regular',
+        security_level: encryptionMethod,
+        attachments: selectedFiles.length > 0 ? selectedFiles.map((file, index) => ({
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+          size: file.size,
+          data: '', // We don't store attachment data in localStorage to save space
+          is_encrypted: encryptionMethod !== 'regular',
+          security_level: encryptionMethod
+        })) : undefined
+      };
+      
+      // Save to localStorage
+      saveSentEmail(account.id, sentEmail);
+      
+      // Update local state
+      setSentEmails(prev => [sentEmail, ...prev]);
+      
       // Close compose and refresh emails
       setIsComposeOpen(false);
       setComposeTo('');
@@ -187,11 +297,16 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
     }
   };
 
-  const filteredEmails = emails.filter(() => {
-    // For now, all emails go to inbox - we'll add folder support later
-    if (selectedFolder === 'inbox') return true;
-    return false;
-  });
+  const filteredEmails = (() => {
+    if (selectedFolder === 'inbox') {
+      return emails;
+    } else if (selectedFolder === 'sent') {
+      return sentEmails;
+    } else {
+      // For drafts and trash, return empty array for now
+      return [];
+    }
+  })();
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -600,14 +715,23 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             </div>
           ) : filteredEmails.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-              <Inbox className="h-8 w-8 mb-2" />
-              <p className="text-sm">No emails yet</p>
-              <button
-                onClick={handleSync}
-                className="mt-2 text-xs text-isro-blue hover:underline"
-              >
-                Sync now
-              </button>
+              {selectedFolder === 'sent' ? (
+                <>
+                  <SendIcon className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No sent emails yet</p>
+                </>
+              ) : (
+                <>
+                  <Inbox className="h-8 w-8 mb-2" />
+                  <p className="text-sm">No emails yet</p>
+                  <button
+                    onClick={handleSync}
+                    className="mt-2 text-xs text-isro-blue hover:underline"
+                  >
+                    Sync now
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             filteredEmails.map(email => (
@@ -622,7 +746,9 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 <div className="flex justify-between items-start mb-1">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <h3 className={cn("font-medium text-sm truncate", !email.is_read && "font-bold text-gray-900")}>
-                      {email.from_name || email.from_email}
+                      {selectedFolder === 'sent' 
+                        ? (Array.isArray(email.to_emails) ? email.to_emails.join(', ') : email.to_emails?.[0] || 'Unknown')
+                        : (email.from_name || email.from_email)}
                     </h3>
                     <button
                       onClick={(e) => {
@@ -690,22 +816,44 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
-                      {(selectedEmail.from_name || selectedEmail.from_email)[0]?.toUpperCase() || '?'}
+                      {selectedFolder === 'sent' 
+                        ? (selectedEmail.from_email || account.email)[0]?.toUpperCase() || '?'
+                        : (selectedEmail.from_name || selectedEmail.from_email)[0]?.toUpperCase() || '?'}
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{selectedEmail.from_name || selectedEmail.from_email}</p>
-                      <p className="text-sm text-gray-500">
-                        to {(() => {
-                          const emails = selectedEmail.to_emails;
-                          if (!emails) return 'Unknown';
-                          if (Array.isArray(emails)) return emails.join(', ');
-                          try {
-                            return typeof emails === 'string' ? JSON.parse(emails).join(', ') : 'Unknown';
-                          } catch {
-                            return emails;
-                          }
-                        })()}
-                      </p>
+                      {selectedFolder === 'sent' ? (
+                        <>
+                          <p className="font-medium text-gray-900">From: {selectedEmail.from_email || account.email}</p>
+                          <p className="text-sm text-gray-500">
+                            To: {(() => {
+                              const emails = selectedEmail.to_emails;
+                              if (!emails) return 'Unknown';
+                              if (Array.isArray(emails)) return emails.join(', ');
+                              try {
+                                return typeof emails === 'string' ? JSON.parse(emails).join(', ') : 'Unknown';
+                              } catch {
+                                return emails;
+                              }
+                            })()}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium text-gray-900">{selectedEmail.from_name || selectedEmail.from_email}</p>
+                          <p className="text-sm text-gray-500">
+                            to {(() => {
+                              const emails = selectedEmail.to_emails;
+                              if (!emails) return 'Unknown';
+                              if (Array.isArray(emails)) return emails.join(', ');
+                              try {
+                                return typeof emails === 'string' ? JSON.parse(emails).join(', ') : 'Unknown';
+                              } catch {
+                                return emails;
+                              }
+                            })()}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-gray-400">
