@@ -727,16 +727,17 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-8">
               <div className="prose max-w-none text-gray-800 whitespace-pre-wrap font-normal leading-relaxed">
-                {selectedEmail.is_encrypted ? (
+                {/* {selectedEmail.is_encrypted ? (
                   <EncryptedText 
                     text={selectedEmail.body_text}
                     encryptedClassName="text-neutral-500"
                     revealedClassName="dark:text-white text-black"
-                    revealDelayMs={50}
+                    revealDelayMs={5}
                   />
                 ) : (
                   selectedEmail.body_text
-                )}
+                )} */}
+                selectedEmail.body_text
               </div>
 
               {/* Attachments */}
