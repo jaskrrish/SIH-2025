@@ -737,7 +737,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                 ) : (
                   selectedEmail.body_text
                 )} */}
-                selectedEmail.body_text
+                {selectedEmail.body_text}
               </div>
 
               {/* Attachments */}
