@@ -4,7 +4,7 @@ Uses KM-provided QKD key bits to XOR plaintext bits.
 """
 import base64
 from typing import List
-from .km_client import km_client
+from .local_km import local_km_manager
 
 
 def str_to_bits(s: str, one_bit_per_char: bool = False) -> List[int]:
@@ -77,7 +77,7 @@ def encrypt(
             },
         }
 
-    key_response = km_client.request_key(
+    key_response = local_km_manager.request_key(
         requester_sae=requester_sae,
         recipient_sae=recipient_sae,
         key_size=bit_len,
@@ -128,7 +128,7 @@ def decrypt(
     else:
         cipher_bits = [int(b) for b in ciphertext]
 
-    key_response = km_client.get_key_by_id(
+    key_response = local_km_manager.get_key_by_id(
         key_id=key_id,
         requester_sae=requester_sae,
     )
@@ -143,6 +143,6 @@ def decrypt(
     plaintext = message.encode("utf-8")
 
     if mark_consumed:
-        km_client.consume_key(key_id=key_id, requester_sae=requester_sae)
+        local_km_manager.consume_key(key_id=key_id, requester_sae=requester_sae)
 
     return plaintext
