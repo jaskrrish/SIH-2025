@@ -138,13 +138,16 @@ class EmailCacheService:
         return True, cls.FETCH_LIMIT_RECENT
     
     @classmethod
-    def sync_emails_smart(cls, user, account) -> Dict:
+    def sync_emails_smart(cls, user, account, limit_override: Optional[int] = None) -> Dict:
         """
         Smart email sync with intelligent fetch logic
         
         Returns: Dict with sync statistics
         """
         should_fetch, limit = cls.should_fetch_emails(account)
+        if limit_override:
+            # Respect caller override but keep it positive
+            limit = max(1, min(limit, limit_override))
         
         if not should_fetch:
             return {

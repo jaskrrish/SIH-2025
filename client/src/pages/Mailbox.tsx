@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2, Download } from 'lucide-react';
 import { EncryptedText } from "@/components/ui/encrypted-text";
 import { clsx, type ClassValue } from 'clsx';
@@ -64,6 +64,8 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [composeBody, setComposeBody] = useState('');
   const [sending, setSending] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollInFlightRef = useRef(false);
 
   // Check if account is configured for email operations
   const isAccountConfigured = () => {
@@ -82,6 +84,60 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
     }
     loadEmails();
   }, [account.id]);
+
+  // Background polling every ~15s to fetch newest small batch
+  useEffect(() => {
+    const isAccountActive = !(account.id === 'qutemail' && account.email !== 'aalan@qutemail.tech');
+    if (!isAccountActive) return;
+
+    const poll = async () => {
+      if (pollInFlightRef.current || syncing) return;
+      pollInFlightRef.current = true;
+      try {
+        setSyncing(true);
+        const latestSentAt = emails.length > 0 ? emails[0].sent_at : undefined;
+
+        await api.syncEmails(parseInt(account.id), { limit: 5 });
+        const newEmails = await api.listEmails(parseInt(account.id), 50, latestSentAt);
+
+        if (Array.isArray(newEmails) && newEmails.length > 0) {
+          setEmails(prev => {
+            const merged = [...newEmails, ...prev];
+            const seen = new Set<number>();
+            const unique: Email[] = [];
+            for (const email of merged) {
+              if (!seen.has(email.id)) {
+                unique.push(email);
+                seen.add(email.id);
+              }
+            }
+            return unique;
+          });
+
+          // Preserve selection; if nothing selected yet, pick the newest
+          setSelectedEmail(prevSelected => prevSelected || newEmails[0]);
+        }
+
+        setLastSynced(new Date());
+      } catch (err) {
+        console.error('Background sync failed:', err);
+      } finally {
+        pollInFlightRef.current = false;
+        setSyncing(false);
+      }
+    };
+
+    // Kick off interval
+    pollIntervalRef.current = setInterval(poll, 15000);
+
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      pollInFlightRef.current = false;
+    };
+  }, [account.id, emails, syncing]);
 
   const loadEmails = async () => {
     // Skip loading for unconfigured qutemail accounts

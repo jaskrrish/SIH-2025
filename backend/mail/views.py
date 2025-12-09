@@ -31,9 +31,15 @@ def sync_emails(request, account_id):
         return Response({'error': 'Account not found'}, status=status.HTTP_404_NOT_FOUND)
     
     try:
+        # Optional limit override for lightweight polling
+        limit_override = request.query_params.get('limit')
+        limit_value = int(limit_override) if limit_override else None
+
         # Use smart cache service
         print(f"[SYNC] Smart sync for account: {account.email} (ID: {account.id})")
-        sync_result = EmailCacheService.sync_emails_smart(request.user, account)
+        if limit_value:
+            print(f"[SYNC] Using limit override: {limit_value}")
+        sync_result = EmailCacheService.sync_emails_smart(request.user, account, limit_override=limit_value)
         
         return Response({
             'message': f'Synced successfully. Fetched {sync_result["fetched"]} emails, cached {sync_result["cached"]}.',
@@ -70,6 +76,7 @@ def list_emails(request):
     """
     account_id = request.query_params.get('account_id')
     limit = int(request.query_params.get('limit', 50))
+    since = request.query_params.get('since')
     
     # Query only metadata (fast!)
     emails = EmailMetadata.objects.filter(user=request.user)
@@ -77,6 +84,16 @@ def list_emails(request):
     if account_id:
         emails = emails.filter(account_id=account_id)
     
+    if since:
+        try:
+            from django.utils.dateparse import parse_datetime
+            since_dt = parse_datetime(since)
+            if since_dt:
+                emails = emails.filter(sent_at__gt=since_dt)
+        except Exception:
+            # If parsing fails, ignore the filter to keep endpoint tolerant
+            pass
+
     emails = emails[:limit]
     
     # Return lightweight metadata

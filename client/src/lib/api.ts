@@ -120,8 +120,15 @@ export const api = {
     },
     
     // Mail
-    async syncEmails(accountId: number) {
-        const response = await fetch(API_ENDPOINTS.MAIL.SYNC(accountId), {
+    async syncEmails(accountId: number, options?: { limit?: number }) {
+        const params = new URLSearchParams();
+        if (options?.limit) params.append('limit', options.limit.toString());
+
+        const url = params.toString()
+            ? `${API_ENDPOINTS.MAIL.SYNC(accountId)}?${params.toString()}`
+            : API_ENDPOINTS.MAIL.SYNC(accountId);
+
+        const response = await fetch(url, {
             headers: authUtils.getAuthHeaders()
         });
         
@@ -133,10 +140,11 @@ export const api = {
         return response.json();
     },
     
-    async listEmails(accountId?: number, limit = 50) {
+    async listEmails(accountId?: number, limit = 50, since?: string) {
         const params = new URLSearchParams();
         if (accountId) params.append('account_id', accountId.toString());
         params.append('limit', limit.toString());
+        if (since) params.append('since', since);
         
         const response = await fetch(`${API_ENDPOINTS.MAIL.LIST}?${params}`, {
             headers: authUtils.getAuthHeaders()
