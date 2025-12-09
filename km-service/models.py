@@ -166,3 +166,111 @@ class QKDKey(db.Model):
             db.session.delete(key)
         db.session.commit()
         return count
+
+
+class PQCKey(db.Model):
+    """
+    Store PQC (Post-Quantum Cryptography) public/private key pairs
+    Used for Kyber KEM (ML-KEM-768) key encapsulation
+    """
+    __tablename__ = 'pqc_keys'
+    
+    # Key identification
+    key_id = db.Column(db.String(50), primary_key=True, default=lambda: str(uuid.uuid4()))
+    
+    # User identity
+    user_sae = db.Column(db.String(255), nullable=False, unique=True, index=True)  # Email address
+    
+    # Encrypted key material (NEVER store plaintext private keys!)
+    encrypted_public_key = db.Column(db.LargeBinary, nullable=False)
+    encrypted_private_key = db.Column(db.LargeBinary, nullable=False)
+    
+    # Algorithm metadata
+    algorithm = db.Column(db.String(50), default='ML-KEM-768')  # Kyber768
+    key_type = db.Column(db.String(20), default='kyber')
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow(), nullable=False)
+    last_used_at = db.Column(db.DateTime)
+    
+    # Key rotation (optional - for now keys are static)
+    expires_at = db.Column(db.DateTime)  # Null = never expires
+    is_active = db.Column(db.Boolean, default=True)
+    
+    def __repr__(self):
+        return f"<PQCKey {self.key_id[:8]}... {self.user_sae}>"
+    
+    @staticmethod
+    def _get_cipher():
+        """Get Fernet cipher for encryption/decryption"""
+        encryption_key = os.getenv('KM_ENCRYPTION_KEY', 'dev-key-change-in-production-32b')
+        # Ensure key is 32 bytes
+        key_bytes = encryption_key.encode()[:32].ljust(32, b'0')
+        key = base64.urlsafe_b64encode(key_bytes)
+        return Fernet(key)
+    
+    def encrypt_keys(self, public_key_bytes: bytes, private_key_bytes: bytes):
+        """Encrypt key material before storage"""
+        cipher = self._get_cipher()
+        self.encrypted_public_key = cipher.encrypt(public_key_bytes)
+        self.encrypted_private_key = cipher.encrypt(private_key_bytes)
+    
+    def decrypt_public_key(self) -> bytes:
+        """Decrypt public key for retrieval"""
+        cipher = self._get_cipher()
+        return cipher.decrypt(self.encrypted_public_key)
+    
+    def decrypt_private_key(self) -> bytes:
+        """Decrypt private key for retrieval"""
+        cipher = self._get_cipher()
+        return cipher.decrypt(self.encrypted_private_key)
+    
+    def to_dict(self, include_private=False):
+        """Convert to dictionary for API responses"""
+        result = {
+            'key_id': self.key_id,
+            'user_sae': self.user_sae,
+            'algorithm': self.algorithm,
+            'key_type': self.key_type,
+            'created_at': self.created_at.isoformat(),
+            'is_active': self.is_active,
+        }
+        
+        # Always include public key (it's meant to be public!)
+        public_key_bytes = self.decrypt_public_key()
+        result['public_key'] = base64.b64encode(public_key_bytes).decode('utf-8')
+        
+        if include_private:
+            # Only include private key if explicitly requested (for owner)
+            private_key_bytes = self.decrypt_private_key()
+            result['private_key'] = base64.b64encode(private_key_bytes).decode('utf-8')
+        
+        if self.expires_at:
+            result['expires_at'] = self.expires_at.isoformat()
+        if self.last_used_at:
+            result['last_used_at'] = self.last_used_at.isoformat()
+        
+        return result
+    
+    @classmethod
+    def get_or_create_for_user(cls, user_sae: str):
+        """
+        Get existing PQC keypair for user, or create new one if doesn't exist
+        Returns tuple (pqc_key, is_new)
+        """
+        existing = cls.query.filter_by(user_sae=user_sae, is_active=True).first()
+        if existing:
+            return existing, False
+        
+        # Generate new Kyber768 keypair
+        from kyber import Kyber768
+        public_key, private_key = Kyber768.keygen()
+        
+        # Create new PQC key record
+        pqc_key = cls(user_sae=user_sae)
+        pqc_key.encrypt_keys(public_key, private_key)
+        
+        db.session.add(pqc_key)
+        db.session.commit()
+        
+        return pqc_key, True

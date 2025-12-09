@@ -9,7 +9,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from database import db, init_db
-from models import QKDKey
+from models import QKDKey, PQCKey
 from qkd_orchestrator import QKDOrchestrator
 
 # Load environment variables
@@ -415,6 +415,163 @@ def cleanup_expired():
             "removed_count": count,
             "message": f"Cleaned up {count} expired keys"
         })
+    
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+# ==================== PQC Key Management ====================
+
+@app.route('/api/v1/pqc/keypair', methods=['POST'])
+def generate_or_get_pqc_keypair():
+    """
+    Generate or retrieve PQC keypair for a user
+    
+    POST /api/v1/pqc/keypair
+    
+    Request body:
+    {
+        "user_sae": "alice@example.com"
+    }
+    
+    Response:
+    {
+        "status": "success",
+        "key_id": "uuid",
+        "user_sae": "alice@example.com",
+        "public_key": "base64...",
+        "private_key": "base64...",
+        "algorithm": "ML-KEM-768",
+        "is_new": true,
+        "created_at": "2025-12-09T..."
+    }
+    """
+    try:
+        data = request.get_json()
+        user_sae = data.get('user_sae')
+        
+        if not user_sae:
+            return jsonify({
+                "status": "error",
+                "error": "user_sae is required"
+            }), 400
+        
+        # Authenticate
+        if not authenticate_sae(user_sae):
+            return jsonify({
+                "status": "error",
+                "error": "Authentication failed"
+            }), 403
+        
+        # Get or create keypair
+        pqc_key, is_new = PQCKey.get_or_create_for_user(user_sae)
+        
+        # Return keypair with private key (only for owner)
+        result = pqc_key.to_dict(include_private=True)
+        result['status'] = 'success'
+        result['is_new'] = is_new
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/v1/pqc/public-key/<user_sae>', methods=['GET'])
+def get_pqc_public_key(user_sae):
+    """
+    Get public key for a user (for senders to encrypt)
+    
+    GET /api/v1/pqc/public-key/bob@example.com
+    
+    Response:
+    {
+        "status": "success",
+        "key_id": "uuid",
+        "user_sae": "bob@example.com",
+        "public_key": "base64...",
+        "algorithm": "ML-KEM-768"
+    }
+    """
+    try:
+        # Find active PQC key for user
+        pqc_key = PQCKey.query.filter_by(user_sae=user_sae, is_active=True).first()
+        
+        if not pqc_key:
+            return jsonify({
+                "status": "error",
+                "error": f"No PQC key found for {user_sae}",
+                "message": "User has not generated a PQC keypair yet"
+            }), 404
+        
+        # Return public key only (no private key)
+        result = pqc_key.to_dict(include_private=False)
+        result['status'] = 'success'
+        
+        # Update last_used timestamp
+        pqc_key.last_used_at = utc_now()
+        db.session.commit()
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/v1/pqc/private-key/<user_sae>', methods=['GET'])
+def get_pqc_private_key(user_sae):
+    """
+    Get private key for a user (for receivers to decrypt)
+    
+    GET /api/v1/pqc/private-key/bob@example.com
+    
+    Note: In production, implement proper authentication to ensure
+    only the owner can retrieve their private key
+    
+    Response:
+    {
+        "status": "success",
+        "key_id": "uuid",
+        "user_sae": "bob@example.com",
+        "private_key": "base64...",
+        "algorithm": "ML-KEM-768"
+    }
+    """
+    try:
+        # Authenticate (ensure requester is the key owner)
+        if not authenticate_sae(user_sae):
+            return jsonify({
+                "status": "error",
+                "error": "Authentication failed"
+            }), 403
+        
+        # Find active PQC key for user
+        pqc_key = PQCKey.query.filter_by(user_sae=user_sae, is_active=True).first()
+        
+        if not pqc_key:
+            return jsonify({
+                "status": "error",
+                "error": f"No PQC key found for {user_sae}"
+            }), 404
+        
+        # Return keypair with private key
+        result = pqc_key.to_dict(include_private=True)
+        result['status'] = 'success'
+        
+        # Update last_used timestamp
+        pqc_key.last_used_at = utc_now()
+        db.session.commit()
+        
+        return jsonify(result), 200
     
     except Exception as e:
         return jsonify({
