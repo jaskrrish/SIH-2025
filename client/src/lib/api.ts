@@ -155,7 +155,15 @@ export const api = {
         return response.json();
     },
     
-    async sendEmail(accountId: number, toEmails: string[], subject: string, bodyText: string, bodyHtml?: string, securityLevel: 'regular' | 'aes' | 'qs_otp' | 'qkd' | 'qrng_pqc' = 'regular', attachments?: File[]) {
+    async sendEmail(
+        accountId: number,
+        toEmails: string[],
+        subject: string,
+        bodyText: string,
+        bodyHtml?: string,
+        securityLevel: 'regular' | 'aes' | 'qs_otp' | 'qkd' | 'qkd_pqc' | 'qrng_pqc' = 'regular',
+        attachments?: File[]
+    ) {
         // Use FormData for file uploads
         const formData = new FormData();
         formData.append('account_id', accountId.toString());
@@ -209,7 +217,7 @@ export const api = {
                 } else {
                     errorMessage = JSON.stringify(error);
                 }
-            } catch (e) {
+            } catch {
                 errorMessage = `Server error: ${response.status} ${response.statusText}`;
             }
             throw new Error(errorMessage);
@@ -239,7 +247,7 @@ export const api = {
                 if (filenameStarMatch) {
                     try {
                         downloadFilename = decodeURIComponent(filenameStarMatch[1]);
-                    } catch (e) {
+                    } catch {
                         // If decoding fails, try regular filename
                         const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
                         if (filenameMatch) {

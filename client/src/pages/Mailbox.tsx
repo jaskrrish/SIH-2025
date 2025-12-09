@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Lock, Inbox, Send as SendIcon, FileText, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ShieldCheck, Plus, Search, Star, Menu, MoreVertical, Reply, X, Paperclip, Inbox, Send as SendIcon, FileText, Trash2, Download } from 'lucide-react';
 import { EncryptedText } from "@/components/ui/encrypted-text";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -56,7 +56,7 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'sent' | 'drafts' | 'trash'>('inbox');
-  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'aes' | 'qs_otp' | 'qkd'>('qkd');
+  const [encryptionMethod, setEncryptionMethod] = useState<'regular' | 'qkd_pqc' | 'qs_otp' | 'qkd'>('qkd');
   
   // Compose form state
   const [composeTo, setComposeTo] = useState('');
@@ -276,25 +276,25 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                       )}
                     </button>
 
-                    {/* Standard AES */}
+                    {/* QKD-PQC Hybrid */}
                     <button
-                      onClick={() => setEncryptionMethod('aes')}
+                      onClick={() => setEncryptionMethod('qkd_pqc')}
                       className={cn(
                         "p-3 rounded-xl border text-left transition-all relative overflow-hidden",
-                        encryptionMethod === 'aes'
-                          ? "bg-blue-50 border-blue-200 ring-1 ring-blue-500"
+                        encryptionMethod === 'qkd_pqc'
+                          ? "bg-cyan-50 border-cyan-200 ring-1 ring-cyan-500"
                           : "bg-white border-gray-200 hover:border-gray-300"
                       )}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'aes' ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-400")}>
-                          <Lock className="h-4 w-4" />
+                        <div className={cn("p-1.5 rounded-lg", encryptionMethod === 'qkd_pqc' ? "bg-cyan-100 text-cyan-700" : "bg-gray-100 text-gray-400")}>
+                          <ShieldCheck className="h-4 w-4" />
                         </div>
-                        <span className={cn("font-semibold text-sm", encryptionMethod === 'aes' ? "text-blue-900" : "text-gray-600")}>Standard AES</span>
+                        <span className={cn("font-semibold text-sm", encryptionMethod === 'qkd_pqc' ? "text-cyan-900" : "text-gray-600")}>QKD-PQC Hybrid</span>
                       </div>
-                      <p className="text-xs text-gray-500">AES-256-GCM encryption</p>
-                      {encryptionMethod === 'aes' && (
-                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-500" />
+                      <p className="text-xs text-gray-500">KEM + QKD-derived AES-GCM</p>
+                      {encryptionMethod === 'qkd_pqc' && (
+                        <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-cyan-500" />
                       )}
                     </button>
 
@@ -429,13 +429,19 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   disabled={sending}
                   className={cn(
                     "px-6 py-2 text-white font-medium rounded-lg shadow-lg flex items-center gap-2 transition-all",
-                    encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp'
+                    encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp' || encryptionMethod === 'qkd_pqc'
                       ? "bg-isro-orange hover:opacity-90 shadow-isro-orange/20"
                       : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/20",
                     sending && "opacity-50 cursor-not-allowed"
                   )}
                 >
-                  <span>{sending ? 'Sending...' : (encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp' ? 'Send Quantum Secure' : 'Send Normal')}</span>
+                  <span>
+                    {sending
+                      ? 'Sending...'
+                      : (encryptionMethod === 'qkd' || encryptionMethod === 'qs_otp' || encryptionMethod === 'qkd_pqc'
+                        ? 'Send Quantum Secure'
+                        : 'Send Normal')}
+                  </span>
                   <SendIcon className="h-4 w-4" />
                 </button>
               </div>
@@ -627,9 +633,13 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                     {email.subject || '(No subject)'}
                   </h4>
                   {email.is_encrypted && (
-                    <ShieldCheck className={cn(
+                  <ShieldCheck className={cn(
                       "h-3 w-3 shrink-0",
-                      email.security_level === 'qs_otp' ? "text-purple-600" : "text-isro-blue"
+                      email.security_level === 'qs_otp'
+                        ? "text-purple-600"
+                        : email.security_level === 'qkd_pqc'
+                        ? "text-cyan-600"
+                        : "text-isro-blue"
                     )} />
                   )}
                 </div>
@@ -658,15 +668,15 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                       "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border",
                       selectedEmail.security_level === 'qs_otp' 
                         ? "bg-purple-50 text-purple-700 border-purple-200"
-                        : selectedEmail.security_level === 'aes'
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                        : selectedEmail.security_level === 'qkd_pqc'
+                        ? "bg-cyan-50 text-cyan-700 border-cyan-200"
                         : "bg-emerald-50 text-emerald-700 border-emerald-200"
                     )}>
                       <ShieldCheck className="h-3 w-3" />
                       {selectedEmail.security_level === 'qs_otp' 
                         ? 'Quantum OTP'
-                        : selectedEmail.security_level === 'aes'
-                        ? 'AES Encrypted'
+                        : selectedEmail.security_level === 'qkd_pqc'
+                        ? 'QKD-PQC Hybrid'
                         : 'QKD Encrypted'}
                     </span>
                   )}
@@ -798,31 +808,31 @@ export default function Mailbox({ account, onBack }: MailboxProps) {
                   "mt-12 p-4 rounded-lg border flex items-start gap-3",
                   selectedEmail.security_level === 'qs_otp'
                     ? "bg-purple-50 border-purple-200"
-                    : selectedEmail.security_level === 'aes'
-                    ? "bg-blue-50 border-blue-200"
+                    : selectedEmail.security_level === 'qkd_pqc'
+                    ? "bg-cyan-50 border-cyan-200"
                     : "bg-emerald-50 border-emerald-200"
                 )}>
                   <ShieldCheck className={cn(
                     "h-5 w-5 mt-0.5",
                     selectedEmail.security_level === 'qs_otp'
                       ? "text-purple-600"
-                      : selectedEmail.security_level === 'aes'
-                      ? "text-blue-600"
+                      : selectedEmail.security_level === 'qkd_pqc'
+                      ? "text-cyan-600"
                       : "text-emerald-600"
                   )} />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900">
                       {selectedEmail.security_level === 'qs_otp'
                         ? 'Quantum One-Time Pad Encryption'
-                        : selectedEmail.security_level === 'aes'
-                        ? 'AES-256 Encryption'
+                        : selectedEmail.security_level === 'qkd_pqc'
+                        ? 'QKD + PQC Hybrid Encryption'
                         : 'QKD + AES Encryption'}
                     </h4>
                     <p className="text-xs text-slate-600 mt-1">
                       {selectedEmail.security_level === 'qs_otp'
                         ? 'This message was secured using QKD-derived keys with bitwise XOR (true one-time pad). Mathematically unbreakable when properly implemented.'
-                        : selectedEmail.security_level === 'aes'
-                        ? 'This message was secured using industry-standard AES-256-GCM encryption with authenticated encryption.'
+                        : selectedEmail.security_level === 'qkd_pqc'
+                        ? 'This message was secured using PQC (Kyber) key encapsulation combined with QKD-derived material, then protected with AES-GCM.'
                         : 'This message was secured using quantum key distribution (BB84 protocol) combined with AES-256 encryption.'}
                     </p>
                   </div>
