@@ -5,7 +5,7 @@ Obtains key via BB84 simulator (KM REST API), then uses AES-256-GCM for encrypti
 import base64
 from typing import Optional
 from . import level_aes
-from .km_client import km_client
+from .local_km import local_km_manager
 
 
 def encrypt(plaintext: bytes, requester_sae: str, recipient_sae: str,
@@ -33,7 +33,7 @@ def encrypt(plaintext: bytes, requester_sae: str, recipient_sae: str,
         }
     """
     # Request QKD key from Key Manager REST API
-    key_response = km_client.request_key(
+    key_response = local_km_manager.request_key(
         requester_sae=requester_sae,
         recipient_sae=recipient_sae,
         key_size=key_size,
@@ -84,7 +84,7 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
     """
     # Retrieve key from Key Manager REST API (with authorization check)
     try:
-        key_response = km_client.get_key_by_id(
+        key_response = local_km_manager.get_key_by_id(
             key_id=key_id,
             requester_sae=requester_sae
         )
@@ -108,7 +108,7 @@ def decrypt(ciphertext: str, key_id: str, requester_sae: str,
         
         # Mark key as consumed AFTER successful decryption
         if mark_consumed:
-            km_client.consume_key(
+            local_km_manager.consume_key(
                 key_id=key_id,
                 requester_sae=requester_sae
             )
