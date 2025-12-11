@@ -5,6 +5,7 @@ Manages quantum key distribution for secure email communications
 import os
 from datetime import datetime
 from flask import Flask, request, jsonify
+from sqlalchemy import or_, desc
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -416,6 +417,50 @@ def cleanup_expired():
             "message": f"Cleaned up {count} expired keys"
         })
     
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/v1/keys/list', methods=['GET'])
+def list_keys():
+    """
+    List keys for a given email (matches requester or recipient).
+
+    GET /api/v1/keys/list?email=user@example.com&limit=200
+    """
+    try:
+        email = request.args.get('email')
+        limit = int(request.args.get('limit', 200))
+        if not email:
+            return jsonify({"status": "error", "error": "email query param required"}), 400
+
+        keys = (
+            QKDKey.query.filter(
+                or_(
+                    QKDKey.requester_sae == email,
+                    QKDKey.recipient_sae == email,
+                )
+            )
+            .order_by(desc(QKDKey.created_at))
+            .limit(limit)
+            .all()
+        )
+
+        data = [
+            {
+                **k.to_dict(include_key_material=True),
+                "km_instance": k.km_instance,
+                "state": k.state,
+                "served_at": k.served_at.isoformat() if k.served_at else None,
+                "consumed_at": k.consumed_at.isoformat() if k.consumed_at else None,
+            }
+            for k in keys
+        ]
+
+        return jsonify({"status": "success", "keys": data})
     except Exception as e:
         return jsonify({
             "status": "error",

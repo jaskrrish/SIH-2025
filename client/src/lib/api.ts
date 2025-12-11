@@ -2,6 +2,7 @@ import { authUtils } from './auth';
 
 // API Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URI || 'http://127.0.0.1:8000/api';
+const KM_BASE_URL = import.meta.env.VITE_KM_SERVICE_URL || 'http://127.0.0.1:5001';
 
 export const API_ENDPOINTS = {
     // Auth endpoints
@@ -31,6 +32,17 @@ export const API_ENDPOINTS = {
         STATUS: `${API_BASE_URL}/km/status/`,
         GET_KEY: `${API_BASE_URL}/km/get_key/`,
         GET_KEY_WITH_ID: `${API_BASE_URL}/km/get_key_with_id/`,
+    },
+
+    // Direct KM service endpoints
+    KM_SERVICE: {
+        LIST_KEYS: (email: string, limit = 200) =>
+            `${KM_BASE_URL}/api/v1/keys/list?email=${encodeURIComponent(email)}&limit=${limit}`,
+    },
+
+    // Crypto monitoring
+    CRYPTO: {
+        LOCAL_KEYS: `${API_BASE_URL}/crypto/local-keys/`,
     },
     
     // Attachment endpoints
@@ -272,6 +284,32 @@ export const api = {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+    },
+
+    // Crypto monitoring
+    async listLocalKeys(limit = 200) {
+        const params = new URLSearchParams({ limit: limit.toString() });
+        const response = await fetch(`${API_ENDPOINTS.CRYPTO.LOCAL_KEYS}?${params}`, {
+            headers: authUtils.getAuthHeaders(),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to fetch local keys');
+        }
+
+        return response.json();
+    },
+
+    // KM service monitoring
+    async listKmKeysForEmail(email: string, limit = 200) {
+        const url = API_ENDPOINTS.KM_SERVICE.LIST_KEYS(email, limit);
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Failed to fetch KM keys');
+        }
+        return response.json();
     }
 };
 

@@ -30,4 +30,5 @@ urlpatterns = [
     path("api/mail/", include("mail.urls")),  # /api/mail/sync, send, list
     
     path("api/km/", include("km.urls")),  # KM simulator endpoints
+    path("api/crypto/", include("crypto.urls")),  # Crypto utilities (local KM cache)
 ]

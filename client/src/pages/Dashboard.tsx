@@ -18,6 +18,7 @@ interface DashboardProps {
     userData: { username: string; email: string };
     onSelectAccount: (account: EmailAccountData) => void;
     onLogout: () => void;
+    onOpenKeys: () => void;
 }
 
 type ProviderType = 'gmail' | 'outlook' | 'yahoo' | 'custom';
@@ -63,7 +64,7 @@ const EMAIL_PROVIDERS: Provider[] = [
 // Note: QuTeMail provider is not included in EMAIL_PROVIDERS array
 // because it requires special handling (only aalan@qutemail.tech is configured)
 
-export default function Dashboard({ userData, onSelectAccount, onLogout }: DashboardProps) {
+export default function Dashboard({ userData, onSelectAccount, onLogout, onOpenKeys }: DashboardProps) {
     const [emailAccounts, setEmailAccounts] = useState<EmailAccountData[]>([
         {
             id: 'qutemail',
@@ -166,7 +167,7 @@ export default function Dashboard({ userData, onSelectAccount, onLogout }: Dashb
     };
 
     return (
-        <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <div className="min-h-screen w-full bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
             {/* Header */}
             <div className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -180,6 +181,10 @@ export default function Dashboard({ userData, onSelectAccount, onLogout }: Dashb
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        <Button variant="outline" size="sm" className="gap-2" onClick={onOpenKeys}>
+                            <ShieldCheck className="h-4 w-4" />
+                            Key Monitor (My account)
+                        </Button>
                         <Button variant="ghost" size="sm" className="gap-2">
                             <Settings className="h-4 w-4" />
                             Settings
